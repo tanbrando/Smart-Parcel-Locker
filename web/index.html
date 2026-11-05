@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Parcel Locker - Dashboard</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --warning: #ca8a04;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 24px;
+      background-color: var(--bg);
+      color: var(--text);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    h2 { margin-top: 0; font-size: 1.15rem; }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    input, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+    button {
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      margin-top: 8px;
+    }
+    button:hover { opacity: 0.9; }
+    .locker-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .status-AVAILABLE { background: #dcfce7; color: var(--success); }
+    .status-OCCUPIED { background: #fef9c3; color: var(--warning); }
+    .status-MAINTENANCE { background: #fee2e2; color: #dc2626; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>📦 Smart Parcel Locker Dashboard</h1>
+    <div>API Status: <span id="api-status" style="font-weight:bold; color:var(--warning)">Checking...</span></div>
+  </div>
+
+  <div class="grid">
+    <!-- Upload / Register Order -->
+    <div class="card">
+      <h2>📤 Register Parcel from Screenshot</h2>
+      <form id="orderForm">
+        <div class="form-group">
+          <label>Shopee / Courier Screenshot</label>
+          <input type="file" id="screenshot" accept="image/*" required>
+        </div>
+        <div class="form-group">
+          <label>Recipient Name</label>
+          <input type="text" id="recipientName" placeholder="e.g. Nguyen Van A" required>
+        </div>
+        <div class="form-group">
+          <label>Recipient Phone</label>
+          <input type="text" id="recipientPhone" placeholder="0912345678" required>
+        </div>
+        <div class="form-group">
+          <label>Telegram Chat ID (Optional)</label>
+          <input type="text" id="telegramChatId" placeholder="e.g. 123456789">
+        </div>
+        <button type="submit">Upload & Parse Order</button>
+      </form>
+      <div id="uploadResult" style="margin-top:12px; font-size:0.85rem;"></div>
+    </div>
+
+    <!-- Locker Status Monitor -->
+    <div class="card">
+      <h2>🔐 Locker Compartments</h2>
+      <button onclick="fetchLockers()" style="width: auto; margin-bottom: 12px; background: #64748b;">Refresh Lockers</button>
+      <div id="lockersContainer">Loading compartments...</div>
+    </div>
+  </div>
+
+  <!-- Recent Orders Table -->
+  <div class="card" style="margin-top: 24px;">
+    <h2>📋 Recent Orders</h2>
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>Tracking No</th>
+          <th>Recipient</th>
+          <th>Phone</th>
+          <th>Status</th>
+          <th>Locker</th>
+          <th>OTP</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    const API_BASE = "http://localhost:8000/api/v1";
+
+    async function checkHealth() {
+      try {
+        const res = await fetch("http://localhost:8000/health");
+        if (res.ok) {
+          document.getElementById("api-status").textContent = "ONLINE";
+          document.getElementById("api-status").style.color = "var(--success)";
+        }
+      } catch (e) {
+        document.getElementById("api-status").textContent = "OFFLINE";
+        document.getElementById("api-status").style.color = "#dc2626";
+      }
+    }
+
+    async function fetchLockers() {
+      try {
+        const res = await fetch(`${API_BASE}/lockers`);
+        const lockers = await res.json();
+        const container = document.getElementById("lockersContainer");
+        container.innerHTML = lockers.map(l => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee;">
+            <div>
+              <strong>${l.locker_number}</strong> (Max: ${l.max_weight_capacity_grams}g)
+              <div style="font-size:0.8rem; color:#666;">Current weight: ${l.current_weight_grams}g</div>
+            </div>
+            <span class="locker-badge status-${l.status}">${l.status}</span>
+          </div>
+        `).join("");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function fetchOrders() {
+      try {
+        const res = await fetch(`${API_BASE}/orders`);
+        const orders = await res.json();
+        const tbody = document.querySelector("#ordersTable tbody");
+        tbody.innerHTML = orders.map(o => `
+          <tr>
+            <td><code>${o.tracking_number}</code></td>
+            <td>${o.recipient_name}</td>
+            <td>${o.recipient_phone}</td>
+            <td><span class="locker-badge">${o.status}</span></td>
+            <td>${o.locker_id || "-"}</td>
+            <td><code>${o.otp_code || "-"}</code></td>
+          </tr>
+        `).join("");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    document.getElementById("orderForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById("screenshot");
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      formData.append("recipient_name", document.getElementById("recipientName").value);
+      formData.append("recipient_phone", document.getElementById("recipientPhone").value);
+      const tg = document.getElementById("telegramChatId").value;
+      if (tg) formData.append("telegram_chat_id", tg);
+
+      const resDiv = document.getElementById("uploadResult");
+      resDiv.textContent = "Uploading & extracting OCR...";
+      try {
+        const res = await fetch(`${API_BASE}/orders/register-screenshot`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          resDiv.innerHTML = `<span style="color:var(--success)">Order registered! Tracking: <b>${data.tracking_number}</b></span>`;
+          fetchOrders();
+        } else {
+          resDiv.innerHTML = `<span style="color:#dc2626">Error: ${data.detail || "Upload failed"}</span>`;
+        }
+      } catch (err) {
+        resDiv.innerHTML = `<span style="color:#dc2626">Connection failed</span>`;
+      }
+    });
+
+    checkHealth();
+    fetchLockers();
+    fetchOrders();
+  </script>
+</body>
+</html>
+
