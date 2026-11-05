@@ -8,10 +8,10 @@ An automated, intelligent IoT Smart Parcel Locker system powered by **Raspberry 
 
 | Role | Module | Primary Owner | Responsibilities |
 |---|---|---|---|
-| **Person 1** | `edge/cv/` | Computer Vision Engineer | Camera stream capture, QR/Barcode decoding (pyzbar), Waybill label OCR (PaddleOCR/Regex parsers). |
-| **Person 2** | `edge/hardware/` | Hardware & Embedded Driver Dev | Load Cell HX711 sensor (anti-fraud weight delta), Solenoid relay door triggers, LCD 1602 (I2C), and Buzzer. |
-| **Person 3** | `edge/core/` | System & FSM Engineer | Finite State Machine orchestration, 4x4 Keypad rate-limiting / lockout, Edge API client, and `edge/main.py`. |
-| **Person 4** | `server/` & `web/` | Full-stack & Cloud Architect | FastAPI server, SQLite/PostgreSQL ORM, Shopee screenshot OCR, OTP generator & rate limiter, Telegram Bot alerts, and Web Dashboard. |
+| **Quốc** | `edge/cv/` | Computer Vision Engineer | Camera stream capture, QR/Barcode decoding (pyzbar), Waybill label OCR (PaddleOCR/Regex parsers). |
+| **Việt** | `edge/hardware/` | Hardware & Embedded Driver Dev | Load Cell HX711 sensor (anti-fraud weight delta), Solenoid relay door triggers, LCD 1602 (I2C), and Buzzer. |
+| **Nhật** | `edge/core/` | System & FSM Engineer | Finite State Machine orchestration, 4x4 Keypad rate-limiting / lockout, Edge API client, and `edge/main.py`. |
+| **Tấn** | `server/` & `web/` | Full-stack & Cloud Architect | FastAPI server, SQLite/PostgreSQL ORM, Shopee screenshot OCR, OTP generator & rate limiter, Telegram Bot alerts, and Web Dashboard. |
 
 ---
 
@@ -30,21 +30,21 @@ smart-parcel-locker/
 │   ├── requirements.txt        # Edge dependencies (pyzbar, RPi.GPIO, opencv)
 │   ├── config.py               # Pinout mapping, camera index, server endpoint
 │   ├── main.py                 # Edge supervisor & FSM runtime
-│   ├── cv/                     # [PERSON 1]
+│   ├── cv/                     # [QUỐC]
 │   │   ├── __init__.py
 │   │   ├── scanner.py          # scan_package_label()
 │   │   └── ocr_utils.py        # Tracking number & weight regex parsers
-│   ├── hardware/               # [PERSON 2]
+│   ├── hardware/               # [VIỆT]
 │   │   ├── __init__.py
 │   │   ├── hx711_loadcell.py   # measure_weight_delta()
 │   │   ├── lock_controller.py  # open_locker_door()
 │   │   └── indicators.py       # LCD 1602 & Buzzer feedback
-│   └── core/                   # [PERSON 3]
+│   └── core/                   # [NHẬT]
 │       ├── __init__.py
 │       ├── fsm.py              # State Machine (IDLE -> SCANNING -> UNLOCKED -> WEIGHING -> DONE)
 │       ├── keypad.py           # 4x4 Keypad matrix with rate-limiting
 │       └── api_client.py       # HTTP client calling Server endpoints
-├── server/                     # [PERSON 4]
+├── server/                     # [TẤN]
 │   ├── requirements.txt        # Backend dependencies (FastAPI, uvicorn, SQLAlchemy)
 │   ├── Dockerfile              # Docker image definition
 │   ├── .env.example            # Environment variable template
@@ -62,7 +62,7 @@ smart-parcel-locker/
 │   └── services/
 │       ├── ocr_service.py      # Shopee screenshot order parsing
 │       └── notifier.py         # Telegram bot notifications
-├── web/                        # [PERSON 4] Minimal web dashboard
+├── web/                        # [TẤN] Minimal web dashboard
 │   ├── index.html
 │   └── README.md
 └── tests/                      # Integration & Contract tests
