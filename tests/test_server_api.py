@@ -245,3 +245,48 @@ def test_otp_rate_limiting_and_pickup(db_session):
     db_session.refresh(order)
     assert order.status == OrderStatus.COLLECTED
     assert order.otp_code is None
+
+
+def test_dashboard_and_static_files():
+    from pathlib import Path
+    from server.main import (
+        REPO_ROOT,
+        serve_dashboard,
+        serve_lockers,
+        serve_orders,
+        serve_users,
+        serve_logs,
+        serve_simulator,
+    )
+
+    # 1. Multi-Page HTML Route Functions
+    page_handlers = [
+        serve_dashboard,
+        serve_lockers,
+        serve_orders,
+        serve_users,
+        serve_logs,
+        serve_simulator,
+    ]
+    for handler in page_handlers:
+        res = handler()
+        assert Path(res.path).exists(), f"File {res.path} not found"
+        content = Path(res.path).read_text(encoding="utf-8")
+        assert "SmartLocker" in content, f"SmartLocker not in {res.path}"
+
+    # 2. Static CSS file
+    css_file = REPO_ROOT / "web" / "css" / "styles.css"
+    assert css_file.exists()
+    assert "--accent-yellow" in css_file.read_text(encoding="utf-8")
+
+    # 3. Static JS files
+    common_js = REPO_ROOT / "web" / "js" / "common.js"
+    assert common_js.exists()
+    assert "renderSharedSidebar" in common_js.read_text(encoding="utf-8")
+
+    app_js = REPO_ROOT / "web" / "js" / "app.js"
+    assert app_js.exists()
+    assert "fetchAllData" in app_js.read_text(encoding="utf-8")
+
+
+

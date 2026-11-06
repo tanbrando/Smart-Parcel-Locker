@@ -3,7 +3,11 @@ FastAPI Server Root Application [Person 4].
 Smart Parcel Locker Central Management API.
 """
 import sys
+import warnings
 from pathlib import Path
+
+# Suppress Starlette/FastAPI deprecation warnings for cleaner console output
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Compatibility shim for environments with Starlette 1.x where on_startup was removed from Router
 try:
@@ -29,6 +33,8 @@ if str(REPO_ROOT) not in sys.path:
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.core.config import settings
@@ -127,3 +133,54 @@ app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(edge.router, prefix=settings.API_V1_STR)
 app.include_router(lockers.router, prefix=settings.API_V1_STR)
 app.include_router(telegram.router, prefix=settings.API_V1_STR)
+
+
+# Mount static files for Web Dashboard (CSS, JS, Assets)
+web_dir = REPO_ROOT / "web"
+if web_dir.exists():
+    app.mount("/static", StaticFiles(directory=web_dir), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def serve_dashboard():
+    """Serves the Overview Bento Dashboard."""
+    dashboard_path = REPO_ROOT / "web" / "index.html"
+    if dashboard_path.exists():
+        return FileResponse(dashboard_path)
+    return {"message": "Smart Parcel Locker API is running. Visit /docs for Swagger UI."}
+
+
+@app.get("/lockers", include_in_schema=False)
+def serve_lockers():
+    """Serves the Lockers Management Page."""
+    return FileResponse(REPO_ROOT / "web" / "lockers.html")
+
+
+@app.get("/orders", include_in_schema=False)
+def serve_orders():
+    """Serves the Orders & Anti-Fraud Verification Page."""
+    return FileResponse(REPO_ROOT / "web" / "orders.html")
+
+
+@app.get("/users", include_in_schema=False)
+def serve_users():
+    """Serves the Users & Telegram Accounts Page."""
+    return FileResponse(REPO_ROOT / "web" / "users.html")
+
+
+@app.get("/logs", include_in_schema=False)
+def serve_logs():
+    """Serves the Access & Audit Logs Page."""
+    return FileResponse(REPO_ROOT / "web" / "logs.html")
+
+
+@app.get("/simulator", include_in_schema=False)
+def serve_simulator():
+    """Serves the Testing & Simulator Console Page."""
+    return FileResponse(REPO_ROOT / "web" / "simulator.html")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)
+

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLocker - Nhật Ký Kiểm Toán & Sự Kiện</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Nhật Ký Kiểm Toán</h1>
+          <p>Lịch sử ghi nhận toàn bộ hoạt động quét mã, mở tủ, sai OTP và cảnh báo</p>
+        </div>
+
+        <div class="top-bar-actions">
+          <button onclick="initLogsPage()" class="action-pill-btn secondary">Tải Lại Nhật Ký</button>
+        </div>
+      </div>
+
+      <div class="bento-card">
+        <div class="table-container">
+          <table id="logsTable">
+            <thead>
+              <tr>
+                <th>Thời Gian</th>
+                <th>Sự Kiện</th>
+                <th>Vị Trí Tủ</th>
+                <th>Mã Đơn Hàng</th>
+                <th>Chi Tiết Kỹ Thuật</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initLogsPage();
+    });
+  </script>
+</body>
+</html>
+
