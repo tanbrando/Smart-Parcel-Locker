@@ -4,7 +4,7 @@ Manages relay-driven electric strike / solenoid locks for locker doors.
 """
 import time
 import logging
-from typing import Dict
+from typing import Dict, Optional
 
 from edge.config import (
     LOCKER_RELAY_PINS,
@@ -27,7 +27,7 @@ class LockController:
 
     def __init__(self, mock_mode: bool = MOCK_HARDWARE):
         self.mock_mode = mock_mode or not RPI_AVAILABLE
-        self.relay_pins: Dict[int, int] = LOCKER_RELAY_PINS
+        self.relay_pins: Dict[int, int] = dict(LOCKER_RELAY_PINS)
         self.door_status: Dict[int, bool] = {k: True for k in self.relay_pins}  # True = closed
 
         if self.mock_mode:
@@ -39,7 +39,7 @@ class LockController:
         GPIO.setmode(GPIO.BCM)
         for locker_id, pin in self.relay_pins.items():
             GPIO.setup(pin, GPIO.OUT)
-            # Default state: Locked
+            # Default state: Locked (de-energized solenoid)
             initial_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
             GPIO.output(pin, initial_state)
             logger.info("Locker %d relay set on GPIO %d", locker_id, pin)
@@ -47,6 +47,7 @@ class LockController:
     def open_locker_door(self, locker_id: int, duration_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
         """
         Triggers the solenoid relay for `duration_sec` seconds to pop open the locker door.
+        Guaranteed to re-lock solenoid in the `finally` block to prevent coil overheating.
         """
         if locker_id not in self.relay_pins:
             logger.error("Invalid locker_id: %d. Available: %s", locker_id, list(self.relay_pins.keys()))
@@ -57,9 +58,8 @@ class LockController:
 
         if self.mock_mode:
             self.door_status[locker_id] = False  # Door opened
-            time.sleep(0.5)
+            time.sleep(min(0.2, max(0.0, duration_sec)))
             logger.info("[Mock Lock] Locker %d door popped open successfully.", locker_id)
-            time.sleep(1.0)
             self.door_status[locker_id] = True   # Courier/User closes door
             return True
 
@@ -69,7 +69,7 @@ class LockController:
         try:
             GPIO.output(pin, unlock_state)
             self.door_status[locker_id] = False
-            time.sleep(duration_sec)
+            time.sleep(max(0.1, duration_sec))
         finally:
             GPIO.output(pin, lock_state)
             self.door_status[locker_id] = True
@@ -80,4 +80,37 @@ class LockController:
     def is_door_closed(self, locker_id: int) -> bool:
         """Checks reed switch / magnetic contact sensor state."""
         return self.door_status.get(locker_id, True)
+
+    def lock_all(self):
+        """Forces all solenoid relays into locked state immediately."""
+        if not self.mock_mode and RPI_AVAILABLE:
+            lock_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
+            for locker_id, pin in self.relay_pins.items():
+                GPIO.output(pin, lock_state)
+                self.door_status[locker_id] = True
+        else:
+            for locker_id in self.relay_pins:
+                self.door_status[locker_id] = True
+
+    def cleanup(self):
+        """Safely locks all doors before releasing resources."""
+        self.lock_all()
+
+
+# Module-level singleton & helper function for direct Contract import
+_default_lock_controller: Optional[LockController] = None
+
+
+def get_lock_controller() -> LockController:
+    """Returns or initializes the default LockController singleton."""
+    global _default_lock_controller
+    if _default_lock_controller is None:
+        _default_lock_controller = LockController()
+    return _default_lock_controller
+
+
+def open_locker_door(locker_id: int, duration_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
+    """Contract convenience function to unlock a locker compartment for Person 3."""
+    return get_lock_controller().open_locker_door(locker_id=locker_id, duration_sec=duration_sec)
+
 
