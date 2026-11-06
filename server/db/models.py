@@ -1,9 +1,18 @@
 """
 SQLAlchemy ORM Models: User, Locker, Order, and AccessLog [Person 4].
+Strict schema implementation adhering to the IoT Smart Parcel Locker specification.
 """
-import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Enum as SAEnum
+from datetime import datetime, timezone
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    BigInteger,
+    Text,
+    DateTime,
+    ForeignKey,
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import relationship
 
 from contracts.schemas import LockerStatus, OrderStatus
@@ -13,54 +22,55 @@ from server.db.session import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(100), nullable=False)
-    phone = Column(String(20), unique=True, index=True, nullable=False)
-    telegram_chat_id = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    full_name = Column(String(100), nullable=False)
+    phone = Column(String(15), unique=True, index=True, nullable=False)
+    phone_last4 = Column(String(4), index=True, nullable=False)
+    telegram_chat_id = Column(BigInteger, unique=True, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    orders = relationship("Order", back_populates="recipient")
+    orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
 
 
 class Locker(Base):
     __tablename__ = "lockers"
 
-    id = Column(Integer, primary_key=True, index=True)
-    locker_number = Column(String(20), unique=True, nullable=False)
-    status = Column(SAEnum(LockerStatus), default=LockerStatus.AVAILABLE, nullable=False)
-    current_order_id = Column(
-        String(36),
-        ForeignKey("orders.id", use_alter=True, name="fk_locker_order_id"),
-        nullable=True,
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    locker_number = Column(Integer, unique=True, index=True, nullable=False)
+    current_weight = Column(Integer, default=0, nullable=False)
+    max_weight = Column(Integer, default=5000, nullable=False)
+    status = Column(SAEnum(LockerStatus), default=LockerStatus.EMPTY, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
-    current_weight_grams = Column(Float, default=0.0)
-    max_weight_capacity_grams = Column(Float, default=5000.0)
-    last_maintenance = Column(DateTime, default=datetime.utcnow)
 
-    orders = relationship("Order", foreign_keys="Order.locker_id", back_populates="locker")
+    orders = relationship("Order", back_populates="locker")
     logs = relationship("AccessLog", back_populates="locker")
 
 
 class Order(Base):
     __tablename__ = "orders"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    tracking_number = Column(String(50), unique=True, index=True, nullable=False)
-    recipient_id = Column(String(36), ForeignKey("users.id"), nullable=True)
-    recipient_name = Column(String(100), nullable=False)
-    recipient_phone = Column(String(20), index=True, nullable=False)
-    declared_weight_grams = Column(Float, default=0.0)
-    actual_weight_grams = Column(Float, nullable=True)
-    status = Column(SAEnum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
-    locker_id = Column(Integer, ForeignKey("lockers.id"), nullable=True)
-    otp_code = Column(String(10), nullable=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    locker_id = Column(Integer, ForeignKey("lockers.id", ondelete="SET NULL"), nullable=True)
+    tracking_number = Column(String(50), unique=True, index=True, nullable=True)
+    order_code = Column(String(50), nullable=True)
+    expected_weight = Column(Integer, default=0, nullable=False)
+    actual_weight = Column(Integer, nullable=True)
+    otp_code = Column(String(6), index=True, nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
-    telegram_chat_id = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    status = Column(SAEnum(OrderStatus), default=OrderStatus.REGISTERED, nullable=False)
+    screenshot_url = Column(Text, nullable=True)
+    delivered_photo_url = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    delivered_at = Column(DateTime, nullable=True)
+    collected_at = Column(DateTime, nullable=True)
 
-    recipient = relationship("User", back_populates="orders")
-    locker = relationship("Locker", foreign_keys=[locker_id], back_populates="orders")
+    user = relationship("User", back_populates="orders")
+    locker = relationship("Locker", back_populates="orders")
     logs = relationship("AccessLog", back_populates="order")
 
 
@@ -68,12 +78,11 @@ class AccessLog(Base):
     __tablename__ = "access_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    locker_id = Column(Integer, ForeignKey("lockers.id"), nullable=True)
-    order_id = Column(String(36), ForeignKey("orders.id"), nullable=True)
-    event_type = Column(String(50), nullable=False)  # VERIFY_PACKAGE, DEPOSIT, OTP_TRY, OTP_SUCCESS
-    details = Column(String(255), default="")
-    success = Column(Boolean, default=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    locker_id = Column(Integer, ForeignKey("lockers.id", ondelete="SET NULL"), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(50), nullable=False)  # SHIPPER_SCAN, DOOR_OPEN, WEIGHT_CHECK_FAIL, OTP_FAIL, COLLECTED
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     locker = relationship("Locker", back_populates="logs")
     order = relationship("Order", back_populates="logs")

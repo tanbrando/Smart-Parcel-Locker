@@ -26,29 +26,52 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.core.config import settings
 from server.db.session import engine, Base, SessionLocal
-from server.db.models import Locker, LockerStatus
-from server.routers import orders, edge, lockers
+from server.db.models import Locker, LockerStatus, User
+from server.routers import orders, edge, lockers, telegram
+from server.services.telegram import start_telegram_polling_safe
 
 
 def init_database_tables():
-    """Initializes tables and seeds default physical lockers if not present."""
+    """Initializes tables and seeds default users & physical lockers if not present."""
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        count = db.query(Locker).count()
-        if count == 0:
-            initial_lockers = [
-                Locker(id=1, locker_number="L01", status=LockerStatus.AVAILABLE, max_weight_capacity_grams=5000.0),
-                Locker(id=2, locker_number="L02", status=LockerStatus.AVAILABLE, max_weight_capacity_grams=5000.0),
-                Locker(id=3, locker_number="L03", status=LockerStatus.AVAILABLE, max_weight_capacity_grams=5000.0),
+        # Seed default users
+        if db.query(User).count() == 0:
+            default_users = [
+                User(
+                    id=1,
+                    full_name="Nguyễn Minh Tấn",
+                    phone="0912343456",
+                    phone_last4="3456",
+                    telegram_chat_id=123456789,
+                ),
+                User(
+                    id=2,
+                    full_name="Trần Thị Hoa",
+                    phone="0987654321",
+                    phone_last4="4321",
+                    telegram_chat_id=987654321,
+                ),
             ]
-            db.add_all(initial_lockers)
+            db.add_all(default_users)
+            db.commit()
+
+        # Seed default lockers
+        if db.query(Locker).count() == 0:
+            default_lockers = [
+                Locker(id=1, locker_number=1, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
+                Locker(id=2, locker_number=2, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
+                Locker(id=3, locker_number=3, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
+            ]
+            db.add_all(default_lockers)
             db.commit()
     finally:
         db.close()
@@ -56,14 +79,29 @@ def init_database_tables():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan context: initialize database on startup."""
+    """Application lifespan context: initialize database & start bot polling safely."""
     init_database_tables()
+
+    # Start Telegram polling loop in background if token is configured
+    bot_stop_event = asyncio.Event()
+    bot_task = None
+    if settings.TELEGRAM_BOT_TOKEN and settings.ENABLE_TELEGRAM_BOT_POLLING:
+        bot_task = asyncio.create_task(start_telegram_polling_safe(bot_stop_event))
+
     yield
+
+    # Clean shutdown of bot polling task
+    if bot_task:
+        bot_stop_event.set()
+        try:
+            await asyncio.wait_for(bot_task, timeout=4.0)
+        except Exception:
+            pass
 
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Cloud API and IoT Coordinator for Smart Parcel Locker System",
+    description="Cloud API and IoT Coordinator for Smart Parcel Locker System (Person 4)",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -88,3 +126,4 @@ def health_check():
 app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(edge.router, prefix=settings.API_V1_STR)
 app.include_router(lockers.router, prefix=settings.API_V1_STR)
+app.include_router(telegram.router, prefix=settings.API_V1_STR)
