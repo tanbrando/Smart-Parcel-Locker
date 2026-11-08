@@ -17,19 +17,22 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
 @router.post("/register-screenshot", response_model=OrderResponse)
 async def register_order_from_screenshot(
     file: UploadFile = File(...),
-    recipient_name: str = Form(...),
-    recipient_phone: str = Form(...),
+    recipient_name: Optional[str] = Form(None),
+    recipient_phone: Optional[str] = Form(None),
     telegram_chat_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
-    Parses uploaded e-commerce screenshot (Shopee/Lazada) to extract tracking code
-    and registers parcel into PENDING state.
+    Parses uploaded e-commerce screenshot (Shopee/TikTok) to extract tracking code,
+    recipient name, and recipient phone automatically via PaddleOCR, and registers parcel into PENDING state.
     """
     contents = await file.read()
     parsed_info = ScreenshotOcrService.parse_screenshot(contents, filename=file.filename or "")
 
     tracking_num = parsed_info["tracking_number"]
+    final_name = recipient_name or parsed_info.get("recipient_name") or "Unknown Recipient"
+    final_phone = recipient_phone or parsed_info.get("recipient_phone") or ""
+
     existing = db.query(Order).filter(Order.tracking_number == tracking_num).first()
     if existing:
         raise HTTPException(
@@ -39,8 +42,8 @@ async def register_order_from_screenshot(
 
     new_order = Order(
         tracking_number=tracking_num,
-        recipient_name=recipient_name,
-        recipient_phone=recipient_phone,
+        recipient_name=final_name,
+        recipient_phone=final_phone,
         declared_weight_grams=parsed_info.get("declared_weight_grams", 0.0),
         status=OrderStatus.PENDING,
         telegram_chat_id=telegram_chat_id,
