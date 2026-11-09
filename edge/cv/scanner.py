@@ -283,6 +283,8 @@ class PackageScanner:
             raw_text="",
             barcode_type=None,
             weight_declared=None,
+            success=False,
+            error_code="TIMEOUT",
             confidence=0.0,
             timestamp=datetime.now(timezone.utc),
         )

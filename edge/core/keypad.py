@@ -13,6 +13,7 @@ from edge.config import (
     KEYPAD_LOCKOUT_SECONDS,
     MOCK_HARDWARE,
 )
+from contracts.schemas import KeypadEvent
 
 logger = logging.getLogger("edge.core.keypad")
 
@@ -137,3 +138,27 @@ class KeypadReader:
 
         return "".join(buffer)
 
+    def listen_keypad_otp(
+        self,
+        timeout: float = 30.0,
+        mock_input: Optional[str] = None,
+    ) -> KeypadEvent:
+        """Read one OTP attempt and return the complete keypad contract."""
+        if self.is_locked_out():
+            return KeypadEvent(
+                attempts_count=self.failed_attempts,
+                is_rate_limited=True,
+                remaining_lock_time=self.get_remaining_lockout_seconds(),
+            )
+
+        entered_pin = self.get_pin_input(
+            timeout=timeout,
+            max_digits=6,
+            mock_input=mock_input,
+        ) or ""
+        return KeypadEvent(
+            entered_pin=entered_pin,
+            attempts_count=self.failed_attempts,
+            is_rate_limited=self.is_locked_out(),
+            remaining_lock_time=self.get_remaining_lockout_seconds(),
+        )

@@ -81,4 +81,3 @@ LCD_ROWS: int = 2
 
 BUZZER_PIN: int = 26
 BUZZER_ACTIVE_HIGH: bool = True
-

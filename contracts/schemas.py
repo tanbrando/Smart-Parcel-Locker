@@ -5,7 +5,7 @@ Acts as the single source of truth contract between edge modules and server endp
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class LockerStatus(str, Enum):
@@ -41,6 +41,23 @@ class SystemState(str, Enum):
     ERROR = "ERROR"
 
 
+class DepositStatus(str, Enum):
+    """Result of the edge-side parcel integrity check."""
+
+    SUCCESS = "SUCCESS"
+    EMPTY_DEPOSIT = "EMPTY_DEPOSIT"
+    WEIGHT_MISMATCH = "WEIGHT_MISMATCH"
+    UNSTABLE_WEIGHT = "UNSTABLE_WEIGHT"
+
+
+class DepositAction(str, Enum):
+    """Action requested from the edge controller after verification."""
+
+    CONFIRM_SERVER_AND_LOCK = "CONFIRM_SERVER_AND_LOCK"
+    TRIGGER_BUZZER_ALARM = "TRIGGER_BUZZER_ALARM"
+    RETRY_MEASUREMENT = "RETRY_MEASUREMENT"
+
+
 # ==========================================
 # CV & Hardware Schemas (Edge)
 # ==========================================
@@ -51,17 +68,77 @@ class ScanResult(BaseModel):
     raw_text: str = Field("", description="Raw OCR / Barcode text extracted")
     barcode_type: Optional[str] = Field(None, description="QRCODE, CODE128, etc.")
     weight_declared: Optional[float] = Field(None, description="Weight parsed from waybill label in grams")
+    success: bool = Field(False, description="Whether at least one usable code was detected")
+    order_code: Optional[str] = Field(None, description="Merchant order code when available")
+    ocr_weight: Optional[int] = Field(None, description="OCR weight in grams, for the core contract")
+    phone_last4: Optional[str] = Field(None, description="Last four recipient phone digits")
+    captured_frame_path: str = Field("", description="Evidence image path captured by the edge device")
+    error_code: Optional[str] = Field(None, description="NO_CODE_FOUND, TIMEOUT, or CAMERA_ERROR")
     confidence: float = Field(1.0, ge=0.0, le=1.0, description="Confidence score")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def synchronize_weight_fields(self):
+        if self.ocr_weight is None and self.weight_declared is not None:
+            self.ocr_weight = int(round(self.weight_declared))
+        if self.weight_declared is None and self.ocr_weight is not None:
+            self.weight_declared = float(self.ocr_weight)
+        if self.tracking_number and not self.success:
+            self.success = True
+        return self
 
 
 class WeightMeasurement(BaseModel):
     """Result returned by Load Cell sensor (Person 2)."""
     locker_id: int = Field(..., description="Locker index being measured")
-    current_weight_grams: float = Field(..., description="Absolute weight currently measured")
-    delta_grams: float = Field(..., description="Weight change since tare/door opening")
+    current_weight_grams: float = Field(0.0, description="Absolute weight currently measured")
+    delta_grams: float = Field(0.0, description="Weight change since tare/door opening")
+    before_weight: float = Field(0.0, description="Weight before the door was opened")
+    after_weight: float = Field(0.0, description="Weight after the parcel was placed")
+    delta_weight: float = Field(0.0, description="after_weight - before_weight")
     is_stable: bool = Field(True, description="Whether reading has stabilized")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def synchronize_weight_fields(self):
+        if self.after_weight == 0.0 and self.current_weight_grams != 0.0:
+            self.after_weight = self.current_weight_grams
+        if self.current_weight_grams == 0.0 and self.after_weight != 0.0:
+            self.current_weight_grams = self.after_weight
+        if self.delta_weight == 0.0 and self.delta_grams != 0.0:
+            self.delta_weight = self.delta_grams
+        if self.delta_grams == 0.0 and self.delta_weight != 0.0:
+            self.delta_grams = self.delta_weight
+        return self
+
+
+class LockerAuth(BaseModel):
+    """Authorization returned by the server before opening a locker."""
+
+    is_allowed: bool
+    locker_id: Optional[int] = None
+    order_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    expected_weight: Optional[float] = None
+    weight_tolerance: float = 150.0
+    reject_reason: Optional[str] = None
+
+
+class KeypadEvent(BaseModel):
+    """One completed OTP entry attempt from the matrix keypad."""
+
+    entered_pin: str = ""
+    attempts_count: int = 0
+    is_rate_limited: bool = False
+    remaining_lock_time: int = 0
+
+
+class DepositDecision(BaseModel):
+    """Core decision after comparing the measured parcel with the authorization."""
+
+    status: DepositStatus
+    action: DepositAction
+    message: str
 
 
 # ==========================================
@@ -102,6 +179,8 @@ class PackageVerificationResponse(BaseModel):
     max_allowed_weight: Optional[int] = None
     reason: Optional[str] = None
     message: str = ""
+    action: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class DepositConfirmationRequest(BaseModel):

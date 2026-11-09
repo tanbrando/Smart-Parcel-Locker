@@ -97,7 +97,6 @@ pip install -r requirements.txt
 # Run Edge Controller (automatically falls back to Mock Hardware if not on Raspberry Pi)
 python main.py
 ```
-
 ### 3. Run Tests
 ```bash
 pytest tests/
@@ -116,4 +115,3 @@ pytest tests/
 6. Server marks Order DEPOSITED -> Generates 6-digit OTP -> Sends Telegram notification with OTP to Recipient.
 7. Recipient arrives -> Inputs OTP via 4x4 Keypad -> Edge verifies OTP with Server -> Locker door pops open.
 ```
-
