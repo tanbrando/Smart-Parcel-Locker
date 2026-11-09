@@ -3,23 +3,24 @@
 # Script cài đặt môi trường cho Raspberry Pi 4B - Smart Parcel Locker (Edge Node)
 # Tác giả: Quốc (AI / Computer Vision & Edge)
 # ==============================================================================
-# Hướng dẫn sử dụng:
-#   1. Dùng venv mặc định (tự động tạo edge/venv nếu chưa có):
-#        ./setup.sh
-#   2. Truyền path của venv có sẵn trên Pi:
-#        ./setup.sh /path/to/your/custom_venv
-#      hoặc qua biến môi trường:
-#        VENV_PATH=/path/to/your/custom_venv ./setup.sh
-# ==============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Nhận path của venv từ tham số dòng lệnh $1 hoặc biến môi trường VENV_PATH
-# Nếu không truyền gì, mặc định là "$SCRIPT_DIR/venv"
-CUSTOM_VENV_ARG="${1:-$VENV_PATH}"
-TARGET_VENV="${CUSTOM_VENV_ARG:-$SCRIPT_DIR/venv}"
+# ==============================================================================
+# 🔧 CẤU HÌNH ĐƯỜNG DẪN VENV (BẠN TỰ ĐIỀN ĐƯỜNG DẪN CỦA MÌNH VÀO ĐÂY)
+# ==============================================================================
+# - Nếu bạn có venv sẵn trên Pi, hãy điền đường dẫn tuyệt đối hoặc tương đối vào đây:
+#   Ví dụ: CUSTOM_VENV_PATH="/home/pi/my_env" hoặc CUSTOM_VENV_PATH="$HOME/venv"
+# - Nếu để trống (""), script sẽ mặc định tìm hoặc tạo venv tại: "$SCRIPT_DIR/venv"
+CUSTOM_VENV_PATH="~/IOT/.venv"
+
+# Mở rộng dấu ngã (~) thành $HOME nếu người dùng đặt dấu ~ trong chuỗi ngoặc kép
+CUSTOM_VENV_PATH="${CUSTOM_VENV_PATH/#\~/$HOME}"
+
+# Xác định đường dẫn venv mục tiêu
+TARGET_VENV="${CUSTOM_VENV_PATH:-$SCRIPT_DIR/venv}"
 
 echo "=========================================================="
 echo "🚀 Bắt đầu cài đặt môi trường Smart Parcel Locker trên Pi..."
@@ -27,9 +28,10 @@ echo "📂 Thư mục mã nguồn: $SCRIPT_DIR"
 echo "🐍 Target venv: $TARGET_VENV"
 echo "=========================================================="
 
-# 1. Cập nhật hệ thống
-echo "📦 [1/5] Cập nhật apt repositories..."
-sudo apt update && sudo apt upgrade -y
+# 1. Cập nhật danh sách gói phần mềm (apt update)
+# Lưu ý: Bỏ qua 'apt upgrade' để tránh mất thời gian cập nhật toàn bộ hệ điều hành
+echo "📦 [1/5] Cập nhật danh sách gói phần mềm (apt update)..."
+sudo apt update
 
 # 2. Cài đặt các gói thư viện hệ thống (System Dependencies)
 # - libzbar0, libzbar-dev: Đọc mã QR & Barcode (pyzbar)
@@ -56,7 +58,7 @@ sudo apt install -y \
 echo "🔧 [3/5] Cấu hình phần cứng (I2C)..."
 sudo raspi-config nonint do_i2c 0 || true
 
-# 4. Kiểm tra venv được truyền vào; nếu không tồn tại thì tự động tạo mới
+# 4. Kiểm tra venv theo cấu hình; nếu không tìm thấy thì tự động tạo mới
 echo "🐍 [4/5] Thiết lập môi trường ảo Python (venv)..."
 if [ -d "$TARGET_VENV" ] && [ -f "$TARGET_VENV/bin/activate" ]; then
     echo "✅ Đã tìm thấy venv có sẵn tại: $TARGET_VENV"
