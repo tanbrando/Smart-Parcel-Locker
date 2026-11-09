@@ -3,22 +3,39 @@
 # Script cài đặt môi trường cho Raspberry Pi 4B - Smart Parcel Locker (Edge Node)
 # Tác giả: Quốc (AI / Computer Vision & Edge)
 # ==============================================================================
+# Hướng dẫn sử dụng:
+#   1. Dùng venv mặc định (tự động tạo edge/venv nếu chưa có):
+#        ./setup.sh
+#   2. Truyền path của venv có sẵn trên Pi:
+#        ./setup.sh /path/to/your/custom_venv
+#      hoặc qua biến môi trường:
+#        VENV_PATH=/path/to/your/custom_venv ./setup.sh
+# ==============================================================================
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Nhận path của venv từ tham số dòng lệnh $1 hoặc biến môi trường VENV_PATH
+# Nếu không truyền gì, mặc định là "$SCRIPT_DIR/venv"
+CUSTOM_VENV_ARG="${1:-$VENV_PATH}"
+TARGET_VENV="${CUSTOM_VENV_ARG:-$SCRIPT_DIR/venv}"
+
 echo "=========================================================="
 echo "🚀 Bắt đầu cài đặt môi trường Smart Parcel Locker trên Pi..."
+echo "📂 Thư mục mã nguồn: $SCRIPT_DIR"
+echo "🐍 Target venv: $TARGET_VENV"
 echo "=========================================================="
 
 # 1. Cập nhật hệ thống
-echo "📦 [1/6] Cập nhật apt repositories..."
+echo "📦 [1/5] Cập nhật apt repositories..."
 sudo apt update && sudo apt upgrade -y
 
 # 2. Cài đặt các gói thư viện hệ thống (System Dependencies)
 # - libzbar0, libzbar-dev: Đọc mã QR & Barcode (pyzbar)
 # - python3-opencv, python3-picamera2: Camera CSI & xử lý hình ảnh
 # - Các thư viện hỗ trợ OpenCV & hiển thị hình ảnh
-echo "📦 [2/6] Cài đặt các gói thư viện hệ thống cần thiết..."
+echo "📦 [2/5] Cài đặt các gói thư viện hệ thống cần thiết..."
 sudo apt install -y \
     python3-pip \
     python3-venv \
@@ -36,35 +53,32 @@ sudo apt install -y \
     python3-smbus
 
 # 3. Kích hoạt giao tiếp I2C và Camera nếu chưa bật
-echo "🔧 [3/6] Cấu hình phần cứng (I2C & Camera)..."
+echo "🔧 [3/5] Cấu hình phần cứng (I2C)..."
 sudo raspi-config nonint do_i2c 0 || true
 
-# 4. Tạo môi trường ảo Python (Virtual Environment)
-# Lưu ý: Cờ --system-site-packages bắt buộc để Python truy cập được picamera2 & libcamera của hệ thống Pi
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/venv"
-
-echo "🐍 [4/6] Khởi tạo môi trường ảo Python tại $VENV_DIR..."
-if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv --system-site-packages "$VENV_DIR"
+# 4. Kiểm tra venv được truyền vào; nếu không tồn tại thì tự động tạo mới
+echo "🐍 [4/5] Thiết lập môi trường ảo Python (venv)..."
+if [ -d "$TARGET_VENV" ] && [ -f "$TARGET_VENV/bin/activate" ]; then
+    echo "✅ Đã tìm thấy venv có sẵn tại: $TARGET_VENV"
+else
+    echo "⚠️ Không tìm thấy venv tại '$TARGET_VENV'. Tiến hành tạo venv mới..."
+    # Lưu ý: Cờ --system-site-packages bắt buộc để Python truy cập được picamera2 của hệ thống Pi
+    python3 -m venv --system-site-packages "$TARGET_VENV"
+    echo "✅ Đã tạo mới venv tại: $TARGET_VENV"
 fi
 
 # Kích hoạt venv
-source "$VENV_DIR/bin/activate"
+source "$TARGET_VENV/bin/activate"
+echo "👉 Đang sử dụng Python: $(which python)"
 
-# 5. Cài đặt các thư viện Python
-echo "📥 [5/6] Cài đặt các thư viện Python (Edge, Pyzbar, PaddleOCR)..."
+# 5. Cài đặt các thư viện từ requirements.txt của Edge
+echo "📥 [5/5] Cài đặt các package từ edge/requirements.txt..."
 pip install --upgrade pip
-
-# Cài đặt requirements của Edge
 pip install -r "$SCRIPT_DIR/requirements.txt"
-
-# Cài đặt PaddlePaddle & PaddleOCR (dùng bản ARM64 CPU trên Pi)
-pip install paddlepaddle paddleocr
 
 # 6. Cấu hình biến môi trường và thư mục mô hình Offline
 MODELS_DIR="$SCRIPT_DIR/models/paddlex"
-echo "🧠 [6/6] Kiểm tra thư mục trọng số Offline: $MODELS_DIR"
+echo "🧠 Kiểm tra thư mục trọng số Offline: $MODELS_DIR"
 
 if [ -d "$MODELS_DIR/official_models" ]; then
     echo "✅ Trọng số PaddleOCR đã có sẵn trong dự án! Pi sẽ chạy hoàn toàn Offline."
@@ -72,13 +86,13 @@ else
     echo "⚠️ Chưa tìm thấy weights trong $MODELS_DIR. Hệ thống sẽ tự tải về khi chạy lần đầu."
 fi
 
-# Tạo file kích hoạt nhanh môi trường .env_edge
-cat << 'EOF' > "$SCRIPT_DIR/.env_edge"
+# Tạo/cập nhật file kích hoạt nhanh môi trường .env_edge
+cat << EOF > "$SCRIPT_DIR/.env_edge"
 # Thiết lập biến môi trường chạy trên Raspberry Pi
 export CAMERA_MODE=raspberry
 export USE_CSI_CAMERA=true
 export MOCK_HARDWARE=false
-export PADDLE_PDX_CACHE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models/paddlex"
+export PADDLE_PDX_CACHE_HOME="$MODELS_DIR"
 export PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 export FLAGS_use_mkldnn=0
 export FLAGS_enable_pir_api=0
@@ -86,17 +100,15 @@ EOF
 
 echo ""
 echo "=========================================================="
-echo "🎉 CÀI ĐẶT HOÀN TẤT!"
+echo "🎉 CÀI ĐẶT HOÀN TẤT CHO PI!"
 echo "Để chạy thử nghiệm hệ thống tại tủ đồ, bạn chạy lệnh:"
 echo ""
-echo "  cd $SCRIPT_DIR"
-echo "  source venv/bin/activate"
-echo "  source .env_edge"
+echo "  source $TARGET_VENV/bin/activate"
+echo "  source $SCRIPT_DIR/.env_edge"
 echo ""
 echo "  # Chạy test ảnh:"
-echo "  python test/test_camera_scanner.py --mode test"
+echo "  python $SCRIPT_DIR/test/test_camera_scanner.py --mode test"
 echo ""
 echo "  # Chạy thực tế bằng Camera CSI:"
-echo "  python test/test_camera_scanner.py --mode raspberry"
+echo "  python $SCRIPT_DIR/test/test_camera_scanner.py --mode raspberry"
 echo "=========================================================="
-
