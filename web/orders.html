@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLocker - Quản Lý Bưu Kiện & Đơn Hàng</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .filter-pills-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .filter-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 6px 16px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-pill.active {
+      background: var(--dark-pill);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Danh Sách Bưu Kiện</h1>
+          <p>Kiểm soát hành trình đơn hàng, đối soát cân nặng chống gian lận và mã OTP</p>
+        </div>
+
+        <div class="top-bar-actions">
+          <button onclick="initOrdersPage()" class="action-pill-btn secondary">Cập Nhật</button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-pills-row">
+        <button class="filter-pill active" data-filter="ALL" onclick="setOrderFilter('ALL')">Tất Cả</button>
+        <button class="filter-pill" data-filter="STORED" onclick="setOrderFilter('STORED')">Đang Trong Tủ</button>
+        <button class="filter-pill" data-filter="REGISTERED" onclick="setOrderFilter('REGISTERED')">Chờ Giao</button>
+        <button class="filter-pill" data-filter="COLLECTED" onclick="setOrderFilter('COLLECTED')">Đã Lấy</button>
+      </div>
+
+      <!-- Orders Table Bento Card -->
+      <div class="bento-card">
+        <div class="table-container">
+          <table id="ordersTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Mã Vận Đơn</th>
+                <th>Mã Đơn</th>
+                <th>Khách Hàng</th>
+                <th>Trạng Thái</th>
+                <th>Vị Trí Tủ</th>
+                <th>KL OCR (Dự Kiến)</th>
+                <th>KL Cân Thực Tế</th>
+                <th>Đối Soát</th>
+                <th>Mã OTP Lấy Hàng</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initOrdersPage();
+    });
+  </script>
+</body>
+</html>
+

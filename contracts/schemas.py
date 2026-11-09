@@ -4,22 +4,29 @@ Acts as the single source of truth contract between edge modules and server endp
 """
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 
 class LockerStatus(str, Enum):
-    AVAILABLE = "AVAILABLE"
+    EMPTY = "EMPTY"
     OCCUPIED = "OCCUPIED"
     MAINTENANCE = "MAINTENANCE"
-    ERROR = "ERROR"
 
 
 class OrderStatus(str, Enum):
-    PENDING = "PENDING"
-    DEPOSITED = "DEPOSITED"
-    RETRIEVED = "RETRIEVED"
-    CANCELLED = "CANCELLED"
+    REGISTERED = "REGISTERED"
+    STORED = "STORED"
+    COLLECTED = "COLLECTED"
+    REJECTED = "REJECTED"
+
+
+class AccessAction(str, Enum):
+    SHIPPER_SCAN = "SHIPPER_SCAN"
+    DOOR_OPEN = "DOOR_OPEN"
+    WEIGHT_CHECK_FAIL = "WEIGHT_CHECK_FAIL"
+    OTP_FAIL = "OTP_FAIL"
+    COLLECTED = "COLLECTED"
 
 
 class SystemState(str, Enum):
@@ -58,82 +65,111 @@ class WeightMeasurement(BaseModel):
 
 
 # ==========================================
-# Edge <-> Server API Payloads
+# User Layer (Screenshot Registration)
+# ==========================================
+
+class ScreenshotRegisterData(BaseModel):
+    order_id: int
+    tracking_number: Optional[str] = None
+    order_code: Optional[str] = None
+    detected_recipient: str
+    status: OrderStatus
+    message: str
+
+
+class ScreenshotRegisterResponse(BaseModel):
+    success: bool
+    data: ScreenshotRegisterData
+
+
+# ==========================================
+# Edge <-> Server API Payloads (Person 4 Contract)
 # ==========================================
 
 class PackageVerificationRequest(BaseModel):
     """Request sent by edge when courier presents waybill."""
-    tracking_number: str
-    measured_weight_grams: Optional[float] = None
+    tracking_number: Optional[str] = None
+    ocr_weight: int = Field(0, description="Declared/OCR weight in grams")
+    recipient_phone_last4: Optional[str] = None
 
 
 class PackageVerificationResponse(BaseModel):
     """Response from server authorizing locker deposit."""
-    verified: bool
-    order_id: Optional[str] = None
-    locker_id: Optional[int] = None
-    declared_weight_grams: Optional[float] = None
-    tolerance_grams: float = 150.0
+    action: str = Field(..., description="'UNLOCK_DOOR' or 'REJECT'")
+    locker_number: Optional[int] = None
+    order_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    max_allowed_weight: Optional[int] = None
+    reason: Optional[str] = None
     message: str = ""
 
 
 class DepositConfirmationRequest(BaseModel):
     """Request sent by edge after parcel is placed and weighed."""
-    order_id: str
-    locker_id: int
-    tracking_number: str
-    final_weight_grams: float
+    order_id: int
+    locker_number: int
+    delta_weight: int
+    image_base64: Optional[str] = None
 
 
 class DepositConfirmationResponse(BaseModel):
     """Server acknowledgment of successful deposit."""
     success: bool
-    order_id: str
-    locker_id: int
-    message: str = "Deposit confirmed successfully"
+    status: OrderStatus
+    otp_generated: str
+    weight_matched: bool
+    deviation_gram: int
 
 
 class OtpVerificationRequest(BaseModel):
     """Request sent when recipient inputs 6-digit OTP."""
     otp_code: str
-    locker_id: Optional[int] = None
 
 
 class OtpVerificationResponse(BaseModel):
     """Response authorizing recipient pickup."""
-    success: bool
-    locker_id: Optional[int] = None
-    order_id: Optional[str] = None
+    valid: bool
+    locker_number: Optional[int] = None
+    order_id: Optional[int] = None
+    remaining_attempts: Optional[int] = None
+    is_locked: Optional[bool] = None
     message: str = ""
 
 
 # ==========================================
-# Server & Management Models
+# Management & Entity Models
 # ==========================================
 
-class OrderCreateRequest(BaseModel):
-    """Manual or OCR-extracted order registration."""
-    tracking_number: str
-    recipient_name: str
-    recipient_phone: str
-    declared_weight_grams: float = 0.0
-    telegram_chat_id: Optional[str] = None
+class UserResponse(BaseModel):
+    id: int
+    full_name: str
+    phone: str
+    phone_last4: str
+    telegram_chat_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderResponse(BaseModel):
     """Full order detail representation."""
-    id: str
-    tracking_number: str
-    recipient_name: str
-    recipient_phone: str
-    declared_weight_grams: float
-    actual_weight_grams: Optional[float] = None
-    status: OrderStatus
+    id: int
+    user_id: int
     locker_id: Optional[int] = None
+    tracking_number: Optional[str] = None
+    order_code: Optional[str] = None
+    expected_weight: int = 0
+    actual_weight: Optional[int] = None
     otp_code: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
+    otp_expires_at: Optional[datetime] = None
+    status: OrderStatus
+    screenshot_url: Optional[str] = None
+    delivered_photo_url: Optional[str] = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    collected_at: Optional[datetime] = None
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -141,10 +177,21 @@ class OrderResponse(BaseModel):
 class LockerInfo(BaseModel):
     """Current state of a physical locker compartment."""
     id: int
-    locker_number: str
+    locker_number: int
+    current_weight: int = 0
+    max_weight: int = 5000
     status: LockerStatus
-    current_order_id: Optional[str] = None
-    current_weight_grams: float = 0.0
-    max_weight_capacity_grams: float = 5000.0
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccessLogResponse(BaseModel):
+    id: int
+    locker_id: Optional[int] = None
+    order_id: Optional[int] = None
+    action: str
+    details: Optional[str] = None
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
