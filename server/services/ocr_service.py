@@ -1,10 +1,17 @@
 """
-Server-side Screenshot OCR Service [Person 4].
-Parses Shopee/e-commerce order screenshots uploaded by users to extract tracking numbers & order details.
+Server-side Screenshot OCR Service [Person 1 - Quốc & Person 4].
+Parses Shopee / TikTok e-commerce order screenshots uploaded by users to extract
+tracking_number, recipient_name, and recipient_phone using PaddleOCR + Regex.
 """
 import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+
+from edge.cv.ocr_utils import (
+    extract_shopee_screenshot,
+    extract_weight_grams,
+    run_ocr_lines,
+)
 
 logger = logging.getLogger("server.services.ocr")
 
