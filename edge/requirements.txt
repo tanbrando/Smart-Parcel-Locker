@@ -31,13 +31,13 @@ paddleocr>=3.0.0
 #           Mã vận chuyển, Tên người nhận, Số điện thoại
 # ------------------------------------------------------------------------------
 # 1. Framework AI OCR bóc tách văn bản tiếng Việt
-paddlepaddle>=3.0.0
-paddleocr>=3.0.0
+# paddlepaddle>=3.0.0
+# paddleocr>=3.0.0
 
 # 2. Xử lý ảnh đầu vào từ upload của khách hàng
-opencv-python-headless>=4.8.0
-Pillow>=10.0.0
-numpy>=1.24.0
+# opencv-python-headless>=4.8.0
+# Pillow>=10.0.0
+# numpy>=1.24.0
 
 # 3. Chuẩn hóa dữ liệu schema
-pydantic>=2.6.0
+# pydantic>=2.6.0
