@@ -82,6 +82,8 @@ class PackageScanner:
                         raw_text=raw_data,
                         barcode_type=barcode_type,
                         weight_declared=declared_weight,
+                        success=True,
+                        ocr_weight=int(round(declared_weight)) if declared_weight is not None else None,
                         confidence=0.99,
                         timestamp=datetime.utcnow(),
                     )
@@ -98,7 +100,8 @@ class PackageScanner:
             raw_text="",
             barcode_type=None,
             weight_declared=None,
+            success=False,
+            error_code="TIMEOUT",
             confidence=0.0,
             timestamp=datetime.utcnow(),
         )
-

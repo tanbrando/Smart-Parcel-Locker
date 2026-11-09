@@ -4,6 +4,9 @@ Verifies that Edge functions and classes produce outputs compliant with shared c
 """
 import pytest
 from contracts.schemas import (
+    DepositAction,
+    DepositStatus,
+    LockerAuth,
     ScanResult,
     WeightMeasurement,
     SystemState,
@@ -14,7 +17,7 @@ from edge.hardware.hx711_loadcell import LoadCellController
 from edge.hardware.lock_controller import LockController
 from edge.hardware.indicators import IndicatorController
 from edge.core.keypad import KeypadReader
-from edge.core.fsm import LockerStateMachine
+from edge.core.fsm import LockerStateMachine, verify_deposit_integrity
 
 
 def test_tracking_regex_parsers():
@@ -84,3 +87,46 @@ def test_fsm_initial_state():
     fsm.reset_to_idle()
     assert fsm.state == SystemState.IDLE
 
+
+def test_embedded_contracts_are_synchronized():
+    scan = ScanResult(tracking_number="SPX123", weight_declared=500)
+    assert scan.success is True
+    assert scan.ocr_weight == 500
+
+    measurement = WeightMeasurement(
+        locker_id=1,
+        current_weight_grams=510,
+        delta_grams=510,
+        is_stable=True,
+    )
+    assert measurement.after_weight == 510
+    assert measurement.delta_weight == 510
+
+
+def test_deposit_integrity_rejects_empty_and_accepts_valid_package():
+    auth = LockerAuth(
+        is_allowed=True,
+        locker_id=1,
+        expected_weight=500,
+        weight_tolerance=20,
+    )
+    empty = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=5, is_stable=True),
+    )
+    assert empty.status == DepositStatus.EMPTY_DEPOSIT
+    assert empty.action == DepositAction.TRIGGER_BUZZER_ALARM
+
+    valid = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=510, is_stable=True),
+    )
+    assert valid.status == DepositStatus.SUCCESS
+    assert valid.action == DepositAction.CONFIRM_SERVER_AND_LOCK
+
+
+def test_keypad_event_contract_and_otp_validation():
+    keypad = KeypadReader(mock_mode=True)
+    event = keypad.listen_keypad_otp(mock_input="123456")
+    assert event.entered_pin == "123456"
+    assert event.is_rate_limited is False

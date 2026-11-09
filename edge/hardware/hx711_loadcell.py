@@ -103,6 +103,9 @@ class LoadCellController:
                 locker_id=locker_id,
                 current_weight_grams=simulated_weight,
                 delta_grams=simulated_weight,
+                before_weight=0.0,
+                after_weight=simulated_weight,
+                delta_weight=simulated_weight,
                 is_stable=True,
                 timestamp=datetime.now(timezone.utc),
             )
@@ -118,6 +121,9 @@ class LoadCellController:
             locker_id=locker_id,
             current_weight_grams=round(weight_g, 2),
             delta_grams=round(delta, 2),
+            before_weight=round(self.last_readings.get(locker_id, 0.0) - delta, 2),
+            after_weight=round(weight_g, 2),
+            delta_weight=round(delta, 2),
             is_stable=True,
             timestamp=datetime.now(timezone.utc),
         )

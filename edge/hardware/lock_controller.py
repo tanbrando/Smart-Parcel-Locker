@@ -81,3 +81,17 @@ class LockController:
         """Checks reed switch / magnetic contact sensor state."""
         return self.door_status.get(locker_id, True)
 
+    def wait_for_door_closed(self, locker_id: int, timeout_seconds: float = 60.0) -> bool:
+        """Wait until the door contact reports closed, or the safety timeout expires."""
+        if locker_id not in self.relay_pins:
+            logger.error("Cannot monitor invalid locker_id: %d", locker_id)
+            return False
+
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if self.is_door_closed(locker_id):
+                return True
+            time.sleep(0.05)
+
+        logger.error("Door close timeout for locker %d", locker_id)
+        return False

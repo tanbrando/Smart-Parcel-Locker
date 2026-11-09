@@ -7,6 +7,8 @@ from typing import Optional
 import requests
 
 from contracts.schemas import (
+    LockerAuth,
+    ScanResult,
     PackageVerificationRequest,
     PackageVerificationResponse,
     DepositConfirmationRequest,
@@ -36,13 +38,21 @@ class EdgeApiClient:
             return False
 
     def verify_package(
-        self, tracking_number: str, measured_weight: Optional[float] = None
+        self,
+        tracking_number: str,
+        measured_weight: Optional[float] = None,
+        ocr_weight: Optional[float] = None,
+        recipient_phone_last4: Optional[str] = None,
+        order_code: Optional[str] = None,
     ) -> PackageVerificationResponse:
         """Asks server to verify courier's waybill tracking code."""
         url = f"{self.base_url}/api/v1/pi/verify-package"
         payload = PackageVerificationRequest(
             tracking_number=tracking_number,
             measured_weight_grams=measured_weight,
+            ocr_weight=ocr_weight,
+            recipient_phone_last4=recipient_phone_last4,
+            order_code=order_code,
         ).model_dump()
 
         try:
@@ -53,6 +63,7 @@ class EdgeApiClient:
                 logger.error("Verify package HTTP %d: %s", resp.status_code, resp.text)
                 return PackageVerificationResponse(
                     verified=False,
+                    reason=f"HTTP_{resp.status_code}",
                     message=f"Server returned status {resp.status_code}",
                 )
         except requests.RequestException as exc:
@@ -61,6 +72,38 @@ class EdgeApiClient:
                 verified=False,
                 message=f"Network error: {str(exc)}",
             )
+
+    def request_door_unlock(self, scan_data: ScanResult) -> LockerAuth:
+        """Translate the scanner contract into a server authorization request."""
+        tracking_number = scan_data.tracking_number
+        if not tracking_number:
+            return LockerAuth(is_allowed=False, reject_reason="NO_TRACKING_NUMBER")
+
+        response = self.verify_package(
+            tracking_number=tracking_number,
+            measured_weight=scan_data.ocr_weight or scan_data.weight_declared,
+            ocr_weight=scan_data.ocr_weight or scan_data.weight_declared,
+            recipient_phone_last4=scan_data.phone_last4,
+            order_code=scan_data.order_code,
+        )
+        return LockerAuth(
+            is_allowed=response.verified or response.action == "UNLOCK_DOOR",
+            locker_id=response.locker_id,
+            order_id=response.order_id,
+            expected_weight=response.declared_weight_grams,
+            weight_tolerance=response.tolerance_grams,
+            reject_reason=response.reason if not response.verified else None,
+        )
+
+    def handle_otp_submission(self, pin: str) -> OtpVerificationResponse:
+        """Verify an OTP and return the server decision to the FSM."""
+        normalized_pin = pin.strip()
+        if not normalized_pin.isdigit() or len(normalized_pin) != 6:
+            return OtpVerificationResponse(
+                success=False,
+                message="OTP must contain exactly 6 digits.",
+            )
+        return self.verify_otp(normalized_pin)
 
     def confirm_deposit(
         self, order_id: str, locker_id: int, tracking_number: str, final_weight: float
@@ -117,4 +160,3 @@ class EdgeApiClient:
                 success=False,
                 message=f"Network error: {str(exc)}",
             )
-

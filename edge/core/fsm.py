@@ -6,7 +6,14 @@ import time
 import logging
 from typing import Optional
 
-from contracts.schemas import SystemState
+from contracts.schemas import (
+    DepositAction,
+    DepositDecision,
+    DepositStatus,
+    ScanResult,
+    SystemState,
+    WeightMeasurement,
+)
 from edge.config import WEIGHT_TOLERANCE_GRAMS
 from edge.cv.scanner import PackageScanner
 from edge.hardware.hx711_loadcell import LoadCellController
@@ -16,6 +23,43 @@ from edge.core.keypad import KeypadReader
 from edge.core.api_client import EdgeApiClient
 
 logger = logging.getLogger("edge.core.fsm")
+
+
+def verify_deposit_integrity(
+    auth,
+    weight: WeightMeasurement,
+    minimum_weight_grams: float = 20.0,
+) -> DepositDecision:
+    """Apply the edge-side anti-empty and stability checks before confirmation."""
+    if not weight.is_stable:
+        return DepositDecision(
+            status=DepositStatus.UNSTABLE_WEIGHT,
+            action=DepositAction.RETRY_MEASUREMENT,
+            message="Weight reading is not stable.",
+        )
+
+    measured = weight.delta_weight or weight.delta_grams
+    if measured < minimum_weight_grams:
+        return DepositDecision(
+            status=DepositStatus.EMPTY_DEPOSIT,
+            action=DepositAction.TRIGGER_BUZZER_ALARM,
+            message="No parcel was detected in the locker.",
+        )
+
+    expected = getattr(auth, "expected_weight", None)
+    tolerance = getattr(auth, "weight_tolerance", WEIGHT_TOLERANCE_GRAMS)
+    if expected and abs(measured - expected) > tolerance:
+        return DepositDecision(
+            status=DepositStatus.WEIGHT_MISMATCH,
+            action=DepositAction.TRIGGER_BUZZER_ALARM,
+            message=f"Weight mismatch: measured {measured:.1f}g, expected {expected:.1f}g.",
+        )
+
+    return DepositDecision(
+        status=DepositStatus.SUCCESS,
+        action=DepositAction.CONFIRM_SERVER_AND_LOCK,
+        message="Parcel deposit verified successfully.",
+    )
 
 
 class LockerStateMachine:
@@ -63,18 +107,18 @@ class LockerStateMachine:
         # 2. Verify with server
         self.transition_to(SystemState.VERIFYING)
         self.indicators.display_message("Verifying...", scan_res.tracking_number)
-        verify_res = self.api_client.verify_package(scan_res.tracking_number)
+        auth = self.api_client.request_door_unlock(scan_res)
 
-        if not verify_res.verified or verify_res.locker_id is None:
+        if not auth.is_allowed or auth.locker_id is None:
             self.indicators.error_sound()
-            self.indicators.display_message("Rejected", verify_res.message[:16])
+            self.indicators.display_message("Rejected", (auth.reject_reason or "Not authorized")[:16])
             self.transition_to(SystemState.ERROR)
             time.sleep(2.5)
             self.transition_to(SystemState.IDLE)
             return False
 
-        locker_id = verify_res.locker_id
-        order_id = verify_res.order_id or "unknown"
+        locker_id = auth.locker_id
+        order_id = auth.order_id or "unknown"
         logger.info("Package authorized for Locker %d", locker_id)
 
         # 3. Unlock locker door
@@ -90,23 +134,25 @@ class LockerStateMachine:
         self.transition_to(SystemState.WEIGHING)
         self.indicators.display_message("Measuring weight", "Please wait...")
 
-        expected_w = verify_res.declared_weight_grams
+        expected_w = auth.expected_weight
         measurement = self.loadcell.measure_weight_delta(locker_id, expected_weight=expected_w)
+        if not self.lock.wait_for_door_closed(locker_id):
+            self.indicators.error_sound()
+            self.indicators.display_message("Close Door", "Door not closed")
+            self.transition_to(SystemState.ERROR)
+            time.sleep(1.0)
+            self.transition_to(SystemState.IDLE)
+            return False
 
-        # Weight validation check
-        if expected_w is not None and expected_w > 0:
-            tolerance = verify_res.tolerance_grams or WEIGHT_TOLERANCE_GRAMS
-            diff = abs(measurement.current_weight_grams - expected_w)
-            if diff > tolerance:
-                logger.warning(
-                    "Weight mismatch! Measured: %.1fg, Expected: %.1fg (+/- %.1fg)",
-                    measurement.current_weight_grams,
-                    expected_w,
-                    tolerance,
-                )
-                self.indicators.error_sound()
-                self.indicators.display_message("Weight Mismatch", f"{measurement.current_weight_grams}g vs {expected_w}g")
-                # Depending on business rules, we could reject or accept with alert flag
+        decision = verify_deposit_integrity(auth, measurement)
+        if decision.action != DepositAction.CONFIRM_SERVER_AND_LOCK:
+            logger.warning("Deposit rejected by edge integrity check: %s", decision.message)
+            self.indicators.error_sound()
+            self.indicators.display_message("Deposit Error", decision.message[:16])
+            self.transition_to(SystemState.ERROR)
+            time.sleep(2.0)
+            self.transition_to(SystemState.IDLE)
+            return False
 
         # 5. Confirm deposit to server
         self.transition_to(SystemState.DEPOSIT_CONFIRMED)
@@ -150,7 +196,7 @@ class LockerStateMachine:
         # Verify OTP with server
         self.transition_to(SystemState.VERIFYING)
         self.indicators.display_message("Checking OTP...", pin)
-        otp_res = self.api_client.verify_otp(pin)
+        otp_res = self.api_client.handle_otp_submission(pin)
 
         if otp_res.success and otp_res.locker_id is not None:
             self.keypad.reset_attempts()
@@ -174,4 +220,3 @@ class LockerStateMachine:
         """Displays ready state."""
         self.transition_to(SystemState.IDLE)
         self.indicators.display_message("Smart Parcel Locker", "Press * (Drop)/# (Pick)")
-
