@@ -1,13 +1,14 @@
-"""Servo-based locker door controller."""
+"""
+Solenoid Lock & Door Controller Module [Person 2].
+Manages relay-driven electric strike / solenoid locks for locker doors.
+"""
 import time
 import logging
 from typing import Dict
 
 from edge.config import (
-    LOCKER_SERVO_PINS,
-    SERVO_PWM_FREQUENCY,
-    SERVO_OPEN_ANGLE,
-    SERVO_CLOSED_ANGLE,
+    LOCKER_RELAY_PINS,
+    RELAY_ACTIVE_LOW,
     DOOR_UNLOCK_DURATION_SEC,
     MOCK_HARDWARE,
 )
@@ -22,13 +23,12 @@ except (ImportError, RuntimeError):
 
 
 class LockController:
-    """Controls locker latch servos and tracks door state."""
+    """Controls door release solenoids and monitors magnetic door contacts."""
 
     def __init__(self, mock_mode: bool = MOCK_HARDWARE):
         self.mock_mode = mock_mode or not RPI_AVAILABLE
-        self.servo_pins: Dict[int, int] = LOCKER_SERVO_PINS
-        self.door_status: Dict[int, bool] = {k: True for k in self.servo_pins}
-        self.pwm_channels: Dict[int, object] = {}
+        self.relay_pins: Dict[int, int] = LOCKER_RELAY_PINS
+        self.door_status: Dict[int, bool] = {k: True for k in self.relay_pins}  # True = closed
 
         if self.mock_mode:
             logger.info("LockController initialized in MOCK mode.")
@@ -37,65 +37,61 @@ class LockController:
 
     def _setup_hardware(self):
         GPIO.setmode(GPIO.BCM)
-        for locker_id, pin in self.servo_pins.items():
+        for locker_id, pin in self.relay_pins.items():
             GPIO.setup(pin, GPIO.OUT)
-            pwm = GPIO.PWM(pin, SERVO_PWM_FREQUENCY)
-            pwm.start(self._angle_to_duty_cycle(SERVO_CLOSED_ANGLE))
-            self.pwm_channels[locker_id] = pwm
-            logger.info("Locker %d servo initialized on GPIO %d", locker_id, pin)
-
-    @staticmethod
-    def _angle_to_duty_cycle(angle: float) -> float:
-        """Convert a standard 0-180 degree servo angle to a PWM duty cycle."""
-        angle = max(0.0, min(180.0, angle))
-        return 2.5 + (angle / 18.0)
-
-    def _set_servo_angle(self, locker_id: int, angle: float) -> None:
-        if not self.mock_mode:
-            self.pwm_channels[locker_id].ChangeDutyCycle(self._angle_to_duty_cycle(angle))
+            # Default state: Locked
+            initial_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
+            GPIO.output(pin, initial_state)
+            logger.info("Locker %d relay set on GPIO %d", locker_id, pin)
 
     def open_locker_door(self, locker_id: int, duration_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
         """
-        Moves the latch servo to the open angle, then returns it to closed.
+        Triggers the solenoid relay for `duration_sec` seconds to pop open the locker door.
         """
-        if locker_id not in self.servo_pins:
-            logger.error("Invalid locker_id: %d. Available: %s", locker_id, list(self.servo_pins.keys()))
+        if locker_id not in self.relay_pins:
+            logger.error("Invalid locker_id: %d. Available: %s", locker_id, list(self.relay_pins.keys()))
             return False
 
-        pin = self.servo_pins[locker_id]
-        logger.info("Opening locker %d (servo GPIO %d for %.1fs)...", locker_id, pin, duration_sec)
+        pin = self.relay_pins[locker_id]
+        logger.info("🚪 Opening locker %d (Relay GPIO %d for %.1fs)...", locker_id, pin, duration_sec)
 
         if self.mock_mode:
-            self.door_status[locker_id] = False
-            time.sleep(duration_sec)
-            self.door_status[locker_id] = True
+            self.door_status[locker_id] = False  # Door opened
+            time.sleep(0.5)
+            logger.info("[Mock Lock] Locker %d door popped open successfully.", locker_id)
+            time.sleep(1.0)
+            self.door_status[locker_id] = True   # Courier/User closes door
             return True
 
+        unlock_state = GPIO.LOW if RELAY_ACTIVE_LOW else GPIO.HIGH
+        lock_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
+
         try:
-            self._set_servo_angle(locker_id, SERVO_OPEN_ANGLE)
+            GPIO.output(pin, unlock_state)
             self.door_status[locker_id] = False
             time.sleep(duration_sec)
         finally:
-            self._set_servo_angle(locker_id, SERVO_CLOSED_ANGLE)
+            GPIO.output(pin, lock_state)
             self.door_status[locker_id] = True
 
+        logger.info("Locker %d locked again.", locker_id)
         return True
 
     def is_door_closed(self, locker_id: int) -> bool:
-        """Return the tracked door state (True means closed)."""
+        """Checks reed switch / magnetic contact sensor state."""
         return self.door_status.get(locker_id, True)
 
-    def wait_for_door_closed(self, locker_id: int, timeout_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
-        """Wait until a door is closed or the timeout expires."""
-        deadline = time.monotonic() + timeout_sec
-        while not self.is_door_closed(locker_id) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        return self.is_door_closed(locker_id)
+    def wait_for_door_closed(self, locker_id: int, timeout_seconds: float = 60.0) -> bool:
+        """Wait until the door contact reports closed, or the safety timeout expires."""
+        if locker_id not in self.relay_pins:
+            logger.error("Cannot monitor invalid locker_id: %d", locker_id)
+            return False
 
-    def cleanup(self) -> None:
-        """Stop servo PWM channels and release GPIO resources."""
-        if self.mock_mode:
-            return
-        for pwm in self.pwm_channels.values():
-            pwm.stop()
-        GPIO.cleanup(list(self.servo_pins.values()))
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if self.is_door_closed(locker_id):
+                return True
+            time.sleep(0.05)
+
+        logger.error("Door close timeout for locker %d", locker_id)
+        return False

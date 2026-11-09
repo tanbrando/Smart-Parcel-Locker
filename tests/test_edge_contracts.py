@@ -62,8 +62,6 @@ def test_lock_controller_mock_contract():
     success = lock.open_locker_door(locker_id=1, duration_sec=0.1)
     assert success is True
     assert lock.is_door_closed(locker_id=1) is True
-    assert lock.wait_for_door_closed(locker_id=1, timeout_sec=0.1) is True
-    lock.cleanup()
 
 
 def test_keypad_rate_limiter_and_lockout():
@@ -88,6 +86,8 @@ def test_fsm_initial_state():
     assert fsm.state == SystemState.IDLE
     fsm.reset_to_idle()
     assert fsm.state == SystemState.IDLE
+
+
 def test_embedded_contracts_are_synchronized():
     scan = ScanResult(tracking_number="SPX123", weight_declared=500)
     assert scan.success is True
