@@ -42,13 +42,18 @@ class EdgeApiClient:
         tracking_number: Optional[str] = None,
         ocr_weight: int = 0,
         recipient_phone_last4: Optional[str] = None,
+        measured_weight: Optional[float] = None,
+        order_code: Optional[str] = None,
     ) -> PackageVerificationResponse:
         """Asks server to verify courier's waybill tracking code or phone last 4."""
         url = f"{self.base_url}/api/v1/pi/verify-package"
+        eff_weight = int(round(ocr_weight)) if ocr_weight else (int(round(measured_weight)) if measured_weight is not None else 0)
         payload = PackageVerificationRequest(
             tracking_number=tracking_number,
-            ocr_weight=ocr_weight,
+            ocr_weight=eff_weight,
             recipient_phone_last4=recipient_phone_last4,
+            measured_weight_grams=int(round(measured_weight)) if measured_weight is not None else None,
+            order_code=order_code,
         ).model_dump()
 
         try:
@@ -58,6 +63,7 @@ class EdgeApiClient:
             else:
                 logger.error("Verify package HTTP %d: %s", resp.status_code, resp.text)
                 return PackageVerificationResponse(
+                    action="REJECT",
                     verified=False,
                     reason=f"HTTP_{resp.status_code}",
                     message=f"Server returned status {resp.status_code}",
@@ -66,6 +72,7 @@ class EdgeApiClient:
             logger.error("Network error during verify_package: %s", exc)
             return PackageVerificationResponse(
                 action="REJECT",
+                verified=False,
                 reason="NETWORK_ERROR",
                 message=f"Network error: {str(exc)}",
             )
@@ -76,20 +83,24 @@ class EdgeApiClient:
         if not tracking_number:
             return LockerAuth(is_allowed=False, reject_reason="NO_TRACKING_NUMBER")
 
+        eff_w = scan_data.ocr_weight or (int(round(scan_data.weight_declared)) if scan_data.weight_declared else 0)
         response = self.verify_package(
             tracking_number=tracking_number,
-            measured_weight=scan_data.ocr_weight or scan_data.weight_declared,
-            ocr_weight=scan_data.ocr_weight or scan_data.weight_declared,
+            ocr_weight=eff_w,
+            measured_weight=scan_data.weight_declared or scan_data.ocr_weight,
             recipient_phone_last4=scan_data.phone_last4,
             order_code=scan_data.order_code,
         )
+        is_allowed = bool(response.verified or response.action == "UNLOCK_DOOR")
+        exp_weight = float(response.declared_weight_grams or response.max_allowed_weight) if (response.declared_weight_grams or response.max_allowed_weight) else None
         return LockerAuth(
-            is_allowed=response.verified or response.action == "UNLOCK_DOOR",
-            locker_id=response.locker_id,
+            is_allowed=is_allowed,
+            locker_id=response.locker_id or response.locker_number,
             order_id=response.order_id,
-            expected_weight=response.declared_weight_grams,
-            weight_tolerance=response.tolerance_grams,
-            reject_reason=response.reason if not response.verified else None,
+            customer_name=response.customer_name,
+            expected_weight=exp_weight,
+            weight_tolerance=response.tolerance_grams if hasattr(response, "tolerance_grams") else 150.0,
+            reject_reason=response.reason if not is_allowed else None,
         )
 
     def handle_otp_submission(self, pin: str) -> OtpVerificationResponse:
@@ -97,6 +108,7 @@ class EdgeApiClient:
         normalized_pin = pin.strip()
         if not normalized_pin.isdigit() or len(normalized_pin) != 6:
             return OtpVerificationResponse(
+                valid=False,
                 success=False,
                 message="OTP must contain exactly 6 digits.",
             )

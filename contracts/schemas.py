@@ -4,7 +4,7 @@ Acts as the single source of truth contract between edge modules and server endp
 """
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Union, List, Dict
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
@@ -117,7 +117,7 @@ class LockerAuth(BaseModel):
 
     is_allowed: bool
     locker_id: Optional[int] = None
-    order_id: Optional[str] = None
+    order_id: Optional[Union[int, str]] = None
     customer_name: Optional[str] = None
     expected_weight: Optional[float] = None
     weight_tolerance: float = 150.0
@@ -168,19 +168,46 @@ class PackageVerificationRequest(BaseModel):
     tracking_number: Optional[str] = None
     ocr_weight: int = Field(0, description="Declared/OCR weight in grams")
     recipient_phone_last4: Optional[str] = None
+    measured_weight_grams: Optional[int] = None
+    order_code: Optional[str] = None
 
 
 class PackageVerificationResponse(BaseModel):
     """Response from server authorizing locker deposit."""
-    action: str = Field(..., description="'UNLOCK_DOOR' or 'REJECT'")
+    action: str = Field(default="REJECT", description="'UNLOCK_DOOR' or 'REJECT'")
     locker_number: Optional[int] = None
     order_id: Optional[int] = None
     customer_name: Optional[str] = None
     max_allowed_weight: Optional[int] = None
     reason: Optional[str] = None
     message: str = ""
-    action: Optional[str] = None
-    reason: Optional[str] = None
+    # Aliases & synchronization fields for edge compatibility
+    verified: Optional[bool] = None
+    locker_id: Optional[int] = None
+    declared_weight_grams: Optional[int] = None
+    tolerance_grams: float = 150.0
+
+    @model_validator(mode="after")
+    def sync_contract_fields(self):
+        # Sync verified <-> action
+        if self.verified is None:
+            self.verified = (self.action == "UNLOCK_DOOR")
+        elif not self.action or self.action == "REJECT":
+            self.action = "UNLOCK_DOOR" if self.verified else "REJECT"
+
+        # Sync locker_id <-> locker_number
+        if self.locker_id is None and self.locker_number is not None:
+            self.locker_id = self.locker_number
+        elif self.locker_number is None and self.locker_id is not None:
+            self.locker_number = self.locker_id
+
+        # Sync declared_weight_grams <-> max_allowed_weight
+        if self.declared_weight_grams is None and self.max_allowed_weight is not None:
+            self.declared_weight_grams = self.max_allowed_weight
+        elif self.max_allowed_weight is None and self.declared_weight_grams is not None:
+            self.max_allowed_weight = self.declared_weight_grams
+
+        return self
 
 
 class DepositConfirmationRequest(BaseModel):
@@ -207,17 +234,40 @@ class OtpVerificationRequest(BaseModel):
 
 class OtpVerificationResponse(BaseModel):
     """Response authorizing recipient pickup."""
-    valid: bool
+    valid: bool = False
+    success: Optional[bool] = None
     locker_number: Optional[int] = None
+    locker_id: Optional[int] = None
     order_id: Optional[int] = None
     remaining_attempts: Optional[int] = None
     is_locked: Optional[bool] = None
     message: str = ""
 
+    @model_validator(mode="after")
+    def sync_otp_fields(self):
+        if self.success is None:
+            self.success = self.valid
+        elif not self.valid and self.success is not None:
+            self.valid = self.success
+
+        if self.locker_id is None and self.locker_number is not None:
+            self.locker_id = self.locker_number
+        elif self.locker_number is None and self.locker_id is not None:
+            self.locker_number = self.locker_id
+
+        return self
+
 
 # ==========================================
 # Management & Entity Models
 # ==========================================
+
+class UserCreateRequest(BaseModel):
+    """Payload for registering a new system user."""
+    full_name: str
+    phone: str
+    telegram_chat_id: Optional[int] = None
+
 
 class UserResponse(BaseModel):
     id: int

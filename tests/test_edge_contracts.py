@@ -192,6 +192,90 @@ def test_keypad_event_contract_and_otp_validation():
     event = keypad.listen_keypad_otp(mock_input="123456")
     assert event.entered_pin == "123456"
     assert event.is_rate_limited is False
+
+
+def test_contracts_bidirectional_sync():
+    from contracts.schemas import PackageVerificationResponse, OtpVerificationResponse
+
+    # 1. Server-style -> Edge-style
+    p1 = PackageVerificationResponse(action="UNLOCK_DOOR", locker_number=2, max_allowed_weight=600)
+    assert p1.verified is True
+    assert p1.locker_id == 2
+    assert p1.declared_weight_grams == 600
+
+    # 2. Edge-style -> Server-style
+    p2 = PackageVerificationResponse(verified=True, locker_id=3, declared_weight_grams=800)
+    assert p2.action == "UNLOCK_DOOR"
+    assert p2.locker_number == 3
+    assert p2.max_allowed_weight == 800
+
+    # 3. OTP verification response sync
+    o1 = OtpVerificationResponse(valid=True, locker_number=2)
+    assert o1.success is True
+    assert o1.locker_id == 2
+
+    o2 = OtpVerificationResponse(success=True, locker_id=1)
+    assert o2.valid is True
+    assert o2.locker_number == 1
+
+
+def test_lock_controller_wait_for_door_closed():
+    lock = LockController(mock_mode=True)
+    assert lock.wait_for_door_closed(locker_id=1, timeout_seconds=0.05) is True
+
+
+def test_edge_api_client_and_fsm_full_workflow():
+    from unittest.mock import MagicMock
+    from edge.core.api_client import EdgeApiClient
+    from contracts.schemas import (
+        DepositConfirmationResponse,
+        OtpVerificationResponse,
+        OrderStatus,
+    )
+
+    fsm = LockerStateMachine()
+
+    # Mock API Client responses
+    mock_api = MagicMock(spec=EdgeApiClient)
+    mock_api.request_door_unlock.return_value = LockerAuth(
+        is_allowed=True,
+        locker_id=1,
+        order_id=42,
+        expected_weight=500.0,
+        weight_tolerance=100.0,
+    )
+    mock_api.confirm_deposit.return_value = DepositConfirmationResponse(
+        success=True,
+        status=OrderStatus.STORED,
+        otp_generated="654321",
+        weight_matched=True,
+        deviation_gram=10,
+    )
+    mock_api.handle_otp_submission.return_value = OtpVerificationResponse(
+        valid=True,
+        locker_number=1,
+        order_id=42,
+        message="Authorized",
+    )
+
+    fsm.api_client = mock_api
+
+    from unittest.mock import patch
+    with patch("time.sleep", return_value=None):
+        # 1. Test Courier Deposit Workflow
+        deposit_success = fsm.handle_courier_deposit()
+        assert deposit_success is True
+        assert fsm.state == SystemState.IDLE
+        mock_api.request_door_unlock.assert_called_once()
+        mock_api.confirm_deposit.assert_called_once()
+
+        # 2. Test Recipient Pickup Workflow
+        pickup_success = fsm.handle_recipient_pickup(otp_input="654321")
+        assert pickup_success is True
+        assert fsm.state == SystemState.IDLE
+        mock_api.handle_otp_submission.assert_called_once_with("654321")
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,

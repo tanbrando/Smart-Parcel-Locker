@@ -289,4 +289,42 @@ def test_dashboard_and_static_files():
     assert "fetchAllData" in app_js.read_text(encoding="utf-8")
 
 
+def test_create_user_endpoint(db_session):
+    from contracts.schemas import UserCreateRequest
+
+    payload = UserCreateRequest(
+        full_name="Do Van A",
+        phone="0933112233",
+        telegram_chat_id=998877,
+    )
+    user = orders.create_user(payload=payload, db=db_session)
+    assert user.full_name == "Do Van A"
+    assert user.phone == "0933112233"
+    assert user.phone_last4 == "2233"
+    assert user.telegram_chat_id == 998877
+
+
+def test_lockers_maintenance_and_logs(db_session):
+    # Test toggle maintenance
+    locker = lockers.toggle_maintenance(locker_number=2, db=db_session)
+    assert locker.status == LockerStatus.MAINTENANCE
+
+    locker_back = lockers.toggle_maintenance(locker_number=2, db=db_session)
+    assert locker_back.status == LockerStatus.EMPTY
+
+    # Test get logs
+    logs = lockers.get_access_logs(limit=10, db=db_session)
+    assert isinstance(logs, list)
+
+
+def test_screenshot_ocr_service_details():
+    from server.services.ocr_service import ScreenshotOcrService
+
+    details = ScreenshotOcrService.parse_screenshot_details(b"mock_bytes", filename="SPXVN0123456789.png")
+    assert details["tracking_number"] == "SPXVN0123456789"
+    assert "order_code" in details
+    assert "expected_weight" in details
+
+
+
 

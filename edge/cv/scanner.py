@@ -246,8 +246,8 @@ class PackageScanner:
           until a valid QR/Barcode is decoded by pyzbar, then extracts weight via OCR.
         """
         if image_path is not None or self.mode == "test":
-            if self.mock_mode and image_path is None and not os.path.exists(self.test_image_path):
-                logger.info("[Mock Scanner] Returning default mock scan result.")
+            if self.mock_mode and image_path is None:
+                logger.info("[Mock Scanner] Mock mode active, returning default mock scan result.")
                 return MOCK_SCAN_VALID_SPX
             return self.scan_from_image(image_path or self.test_image_path)
 
