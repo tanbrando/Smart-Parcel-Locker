@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLocker - Bàn Giả Lập & Kiểm Thử Kỹ Thuật</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Bàn Giả Lập & Kiểm Thử</h1>
+          <p>Môi trường mô phỏng tín hiệu phần cứng Raspberry Pi và tin nhắn Telegram Bot</p>
+        </div>
+
+        <div class="top-bar-actions">
+          <a href="/docs" target="_blank" class="action-pill-btn secondary">Tài Liệu Swagger API ↗</a>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <!-- Col 1: Telegram Bot Simulator -->
+        <div class="bento-card">
+          <div class="bento-header">
+            <div>
+              <div class="bento-title">Mô Phỏng Telegram Chatbot</div>
+              <div class="bento-subtitle">Thử nghiệm các lệnh bot và upload ảnh đơn hàng Shopee/Lazada</div>
+            </div>
+            <span class="stage-badge yellow">Bot Console</span>
+          </div>
+
+          <div class="form-group">
+            <label for="simTgChatId">Telegram Chat ID Giả Lập:</label>
+            <input type="number" id="simTgChatId" class="form-control" value="123456789">
+          </div>
+
+          <div class="form-group">
+            <label for="simTgText">Nhập Lệnh Hoặc Tin Nhắn:</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="simTgText" class="form-control" placeholder="Ví dụ: /start 1, /orders, /lockers, /help">
+              <button onclick="sendTgSimText()" class="action-pill-btn" style="white-space:nowrap;">Gửi Lệnh</button>
+            </div>
+          </div>
+
+          <!-- Quick Buttons -->
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+            <button onclick="setTgCmd('/start')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">/start</button>
+            <button onclick="setTgCmd('/orders')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">/orders</button>
+            <button onclick="setTgCmd('/lockers')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">/lockers</button>
+            <button onclick="setTgCmd('/profile')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">/profile</button>
+            <button onclick="setTgCmd('/help')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">/help</button>
+            <button onclick="setTgCmd('/unlink')" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem; color:var(--danger);">/unlink</button>
+          </div>
+
+          <!-- Photo Upload Demo -->
+          <div style="background:var(--bg-subtle); border-radius:14px; padding:12px; margin-bottom:12px;">
+            <label style="font-size:0.78rem; font-weight:700; margin-bottom:4px; display:block;">Gửi Ảnh Đơn Hàng (Bóc Tách OCR):</label>
+            <div style="display:flex; gap:8px;">
+              <input type="file" id="simTgFile" accept="image/*" class="form-control" style="font-size:0.8rem; padding:6px 10px;">
+              <button onclick="sendTgSimPhoto()" class="action-pill-btn secondary" style="white-space:nowrap; font-size:0.8rem;">Gửi Ảnh</button>
+            </div>
+          </div>
+
+          <label style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:var(--text-muted);">Phản Hồi Từ Bot:</label>
+          <div id="simTgConsole" class="terminal-window" style="display:none;"></div>
+        </div>
+
+        <!-- Col 2: Edge Hardware Simulator -->
+        <div class="bento-card">
+          <div class="bento-header">
+            <div>
+              <div class="bento-title">Mô Phỏng Phần Cứng Raspberry Pi 4B</div>
+              <div class="bento-subtitle">Mô phỏng Camera CV, Cảm biến tải trọng HX711 và Bàn phím số Keypad</div>
+            </div>
+            <span class="stage-badge dark">Edge Console</span>
+          </div>
+
+          <!-- Step 1 -->
+          <div style="background:var(--bg-subtle); border-radius:14px; padding:14px; margin-bottom:12px;">
+            <div style="font-size:0.82rem; font-weight:700; margin-bottom:8px;">Bước 1: Shipper Quét Đơn (Camera CV)</div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <input type="text" id="simTracking" class="form-control" placeholder="Mã vận đơn" value="SPXVN048291048">
+              <input type="number" id="simOcrWeight" class="form-control" placeholder="KL OCR (520g)" value="520" style="width:110px;">
+            </div>
+            <button onclick="simEdgeVerify()" class="action-pill-btn secondary" style="padding:6px 14px; font-size:0.8rem;">POST /pi/verify-package</button>
+          </div>
+
+          <!-- Step 2 -->
+          <div style="background:var(--bg-subtle); border-radius:14px; padding:14px; margin-bottom:12px;">
+            <div style="font-size:0.82rem; font-weight:700; margin-bottom:8px;">Bước 2: Shipper Đặt Hàng & Cân (HX711)</div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <input type="number" id="simOrderId" class="form-control" placeholder="Order ID" value="1" style="width:90px;">
+              <input type="number" id="simLockerNum" class="form-control" placeholder="Tủ số" value="1" style="width:80px;">
+              <input type="number" id="simDeltaWeight" class="form-control" placeholder="Cân nặng thực tế" value="495">
+            </div>
+            <button onclick="simEdgeDeposit()" class="action-pill-btn secondary" style="padding:6px 14px; font-size:0.8rem;">POST /pi/confirm-deposit</button>
+          </div>
+
+          <!-- Step 3 -->
+          <div style="background:var(--bg-subtle); border-radius:14px; padding:14px;">
+            <div style="font-size:0.82rem; font-weight:700; margin-bottom:8px;">Bước 3: Khách Nhập OTP Lấy Hàng (Keypad)</div>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="simOtpCode" class="form-control" placeholder="Mã OTP 6 số">
+              <button onclick="simEdgeOtp()" class="action-pill-btn" style="white-space:nowrap; font-size:0.8rem;">Xác Thực OTP</button>
+            </div>
+          </div>
+
+          <label style="font-size:0.75rem; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-top:14px; display:block;">Nhật Ký Tín Hiệu Phần Cứng:</label>
+          <div id="simEdgeConsole" class="terminal-window" style="display:none;"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initSimulatorPage();
+    });
+  </script>
+</body>
+</html>
+

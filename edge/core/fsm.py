@@ -124,11 +124,11 @@ class LockerStateMachine:
         # 3. Unlock locker door
         self.transition_to(SystemState.UNLOCKED_DEPOSIT)
         self.indicators.success_sound()
-        self.indicators.display_message(f"Locker {locker_id} Open", "Insert Parcel")
+        self.indicators.display_message(f"Locker {locker_num} Open", "Insert Parcel")
 
         # Tare before parcel placement
-        self.loadcell.tare(locker_id)
-        self.lock.open_locker_door(locker_id)
+        self.loadcell.tare(locker_num)
+        self.lock.open_locker_door(locker_num)
 
         # 4. Measure weight
         self.transition_to(SystemState.WEIGHING)
@@ -158,18 +158,17 @@ class LockerStateMachine:
         self.transition_to(SystemState.DEPOSIT_CONFIRMED)
         confirm_res = self.api_client.confirm_deposit(
             order_id=order_id,
-            locker_id=locker_id,
-            tracking_number=scan_res.tracking_number,
-            final_weight=measurement.current_weight_grams,
+            locker_number=locker_num,
+            delta_weight=measured_int,
         )
 
         if confirm_res.success:
             self.indicators.success_sound()
-            self.indicators.display_message("Deposit Success!", f"Locker {locker_id} Locked")
-            logger.info("Deposit successfully completed for order %s", order_id)
+            self.indicators.display_message("Deposit Success!", f"Locker {locker_num} Locked")
+            logger.info("Deposit successfully completed for order #%d. OTP: %s", order_id, confirm_res.otp_generated)
         else:
             self.indicators.error_sound()
-            self.indicators.display_message("Confirm Error", confirm_res.message[:16])
+            self.indicators.display_message("Confirm Error", "Deposit failed")
 
         time.sleep(2.5)
         self.transition_to(SystemState.IDLE)
@@ -198,12 +197,12 @@ class LockerStateMachine:
         self.indicators.display_message("Checking OTP...", pin)
         otp_res = self.api_client.handle_otp_submission(pin)
 
-        if otp_res.success and otp_res.locker_id is not None:
+        if otp_res.valid and otp_res.locker_number is not None:
             self.keypad.reset_attempts()
             self.transition_to(SystemState.RETRIEVING)
             self.indicators.success_sound()
-            self.indicators.display_message(f"Locker {otp_res.locker_id} Open", "Take Your Parcel")
-            self.lock.open_locker_door(otp_res.locker_id)
+            self.indicators.display_message(f"Locker {otp_res.locker_number} Open", "Take Your Parcel")
+            self.lock.open_locker_door(otp_res.locker_number)
             time.sleep(2.0)
             self.transition_to(SystemState.IDLE)
             return True

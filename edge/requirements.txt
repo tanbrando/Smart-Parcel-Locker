@@ -1,12 +1,43 @@
+# ==============================================================================
+# SMART PARCEL LOCKER - CV & OCR DEPENDENCIES (Person 1: Quốc)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# [PHẦN 1: PHÍA RASPBERRY PI (TỦ ĐỒ - Quét mã vận đơn & Đọc khối lượng)]
+# Nhiệm vụ: Camera CSI/USB -> Quét QR/Barcode bằng pyzbar -> Đọc khối lượng bằng OCR
+# ------------------------------------------------------------------------------
+# 1. Thư viện cơ sở & mạng giao tiếp với Server
 pydantic>=2.6.0
 requests>=2.31.0
+
+# 2. Xử lý ảnh và giải mã mã vạch 1D / mã QR (pyzbar)
+# Lưu ý: Trên Pi cần cài thêm gói hệ thống: sudo apt install libzbar0 python3-opencv python3-picamera2
 opencv-python-headless>=4.8.0
 pyzbar>=0.1.9
-# Optional on Pi for OCR:
-# paddlepaddle
-# paddleocr
-# Physical Pi dependencies (will be mocked automatically on non-Pi platforms):
+
+# 3. OCR đọc con số Khối lượng (Weight: e.g. 2,667g) trên tem nhãn bưu phẩm
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0
+
+# 4. Thư viện phần cứng trên Pi (Cơ cấu chấp hành & Cảm biến - Tự động mock nếu chạy trên PC)
 # RPi.GPIO>=0.7.1
 # spidev>=3.6
 # smbus2>=0.4.3
 
+
+# ------------------------------------------------------------------------------
+# [PHẦN 2: PHÍA SERVER (Bóc tách ảnh chụp màn hình đơn hàng từ Web/Bot)]
+# Nhiệm vụ: Nhận ảnh chụp màn hình Shopee/TikTok -> PaddleOCR bóc tách:
+#           Mã vận chuyển, Tên người nhận, Số điện thoại
+# ------------------------------------------------------------------------------
+# 1. Framework AI OCR bóc tách văn bản tiếng Việt
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0
+
+# 2. Xử lý ảnh đầu vào từ upload của khách hàng
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# 3. Chuẩn hóa dữ liệu schema
+pydantic>=2.6.0

@@ -24,15 +24,41 @@ CAMERA_FRAME_WIDTH: int = 1280
 CAMERA_FRAME_HEIGHT: int = 720
 SCAN_TIMEOUT_SECONDS: float = 12.0
 
+# Camera Mode: "test" (uses static image from test folder) or "raspberry" / "live" (uses CSI / USB Camera on Pi)
+DEFAULT_CAMERA_MODE: str = "test" if MOCK_HARDWARE else "raspberry"
+CAMERA_MODE: str = os.getenv("CAMERA_MODE", DEFAULT_CAMERA_MODE).lower()
+USE_CSI_CAMERA: bool = os.getenv("USE_CSI_CAMERA", "true").lower() in ("true", "1", "yes")
+
+# Default test image paths
+EDGE_DIR: str = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR: str = os.getenv("PADDLE_PDX_CACHE_HOME", os.path.join(EDGE_DIR, "models", "paddlex"))
+os.environ["PADDLE_PDX_CACHE_HOME"] = MODELS_DIR
+
+DEFAULT_TEST_CAMERA_IMAGE: str = os.getenv(
+    "TEST_CAMERA_IMAGE",
+    os.path.join(EDGE_DIR, "test", "cameras", "shopee.jpg"),
+)
+DEFAULT_TEST_SCREENSHOT_IMAGE: str = os.getenv(
+    "TEST_SCREENSHOT_IMAGE",
+    os.path.join(EDGE_DIR, "test", "screenshots", "shopee.jpg"),
+)
+
 # GPIO Pinout Mapping (BCM Numbers)
-# Solenoid Relays (Active LOW or HIGH depending on relay board; standard: LOW trigger)
-LOCKER_RELAY_PINS: Dict[int, int] = {
-    1: 17,  # Locker 1 Solenoid Relay
-    2: 27,  # Locker 2 Solenoid Relay
-    3: 22,  # Locker 3 Solenoid Relay
+# Servo Motors (PWM control for door locking/opening mechanism, e.g., SG90 / MG996R)
+LOCKER_SERVO_PINS: Dict[int, int] = {
+    1: 17,  # Locker 1 Servo Signal Pin
+    2: 27,  # Locker 2 Servo Signal Pin
+    3: 22,  # Locker 3 Servo Signal Pin
 }
-RELAY_ACTIVE_LOW: bool = True
-DOOR_UNLOCK_DURATION_SEC: float = 4.0
+# Backward compatibility alias
+LOCKER_RELAY_PINS = LOCKER_SERVO_PINS
+
+# Servo angles & timing
+SERVO_PWM_FREQUENCY: int = 50           # Standard 50Hz for RC servos (20ms period)
+SERVO_LOCKED_ANGLE: float = 0.0         # Angle when door is locked (0 degrees)
+SERVO_UNLOCKED_ANGLE: float = 90.0      # Angle when door is open (90 degrees)
+DOOR_UNLOCK_DURATION_SEC: float = 4.0   # Duration to keep unlocked before returning to locked
+
 
 # Load Cell HX711 Pinout
 HX711_DT_PIN: int = 5

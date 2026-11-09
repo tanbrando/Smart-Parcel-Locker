@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLocker - Quản Lý Ngăn Tủ Vật Lý</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Ngăn Tủ Thông Minh</h1>
+          <p>Giám sát tải trọng cảm biến HX711 và trạng thái khóa điện tử Solenoid</p>
+        </div>
+
+        <div class="top-bar-actions">
+          <button onclick="initLockersPage()" class="action-pill-btn secondary">Làm Mới Tình Trạng</button>
+        </div>
+      </div>
+
+      <!-- Lockers Cards Grid -->
+      <div id="lockersFullGrid" class="pipeline-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+        <div style="color:var(--text-muted); padding:20px;">Đang tải danh sách ngăn tủ...</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initLockersPage();
+    });
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLocker - Quản Lý Khách Hàng & Telegram</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Khách Hàng & Telegram Bot</h1>
+          <p>Cấp mã User ID độc quyền để người dùng kích hoạt Chatbot Telegram</p>
+        </div>
+
+        <div class="top-bar-actions">
+          <button onclick="initUsersPage()" class="action-pill-btn secondary">Làm Mới</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 340px 1fr; gap: 16px;">
+        <!-- Form Provision User -->
+        <div class="form-card">
+          <div class="bento-title" style="margin-bottom:6px;">Cấp Tài Khoản Mới</div>
+          <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:16px;">
+            Người dùng chỉ có thể dùng Bot sau khi được Quản trị viên cấp User ID tại đây.
+          </p>
+
+          <form id="createUserForm">
+            <div class="form-group">
+              <label for="newFullName">Họ và Tên</label>
+              <input type="text" id="newFullName" class="form-control" placeholder="Ví dụ: Lê Văn Cường" required>
+            </div>
+            <div class="form-group">
+              <label for="newPhone">Số Điện Thoại</label>
+              <input type="text" id="newPhone" class="form-control" placeholder="Ví dụ: 0912345678" required>
+            </div>
+            <button type="submit" class="action-pill-btn" style="width:100%; justify-content:center;">Tạo & Cấp User ID</button>
+          </form>
+
+          <div id="createUserResult" style="display:none;"></div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="bento-card">
+          <div class="bento-title" style="margin-bottom:14px;">Danh Sách Khách Hàng Đã Được Cấp Phép</div>
+          <div class="table-container">
+            <table id="usersTable">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Họ và Tên</th>
+                  <th>Số Điện Thoại</th>
+                  <th>Trạng Thái Telegram</th>
+                  <th>Cú Pháp Kích Hoạt</th>
+                  <th>Thao Tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initUsersPage();
+    });
+  </script>
+</body>
+</html>
+
