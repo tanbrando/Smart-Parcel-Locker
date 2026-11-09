@@ -9,7 +9,7 @@ Tài liệu này ghi chú toàn bộ nội dung công việc, các bản cập n
 ### Trách nhiệm chính
 Phụ trách giao tiếp tầng vật lý (GPIO, I2C) trên Raspberry Pi 4B, bao gồm:
 1. Đọc cảm biến tải trọng **Load Cell + mạch khuếch đại ADC 24-bit HX711**, lọc nhiễu tín hiệu và tính độ chênh lệch khối lượng ($\Delta W$).
-2. Điều khiển **Relay** đóng/ngắt chốt khóa điện từ **Solenoid 12V** cho 3 ngăn tủ.
+2. Điều khiển **động cơ Servo (SG90 / MG90S / MG996R)** bằng tín hiệu xung PWM (50Hz) gạt chốt khóa / mở cửa tủ cho 3 ngăn tủ.
 3. Điều khiển **còi Buzzer** phát âm thanh phản hồi/báo động và hiển thị trạng thái lên **màn hình LCD 1602 (giao tiếp I2C)**.
 4. Cung cấp các hàm và lớp đúng **Giao ước bàn giao (Contract)** cho **Người 3 (`edge/core/fsm.py`)**.
 
@@ -51,9 +51,9 @@ edge/
 | :--- | :--- | :--- | :--- |
 | **HX711 Load Cell** | `DT` (Data) | `GPIO 5` | Input (Đọc xung dữ liệu 24-bit) |
 | **HX711 Load Cell** | `SCK` (Clock) | `GPIO 6` | Output (Phát xung nhịp đọc bit & chọn Gain 128) |
-| **Relay Khóa Ngăn 1** | `IN1` | `GPIO 17` | Output (`RELAY_ACTIVE_LOW = True`, kích mức `LOW`) |
-| **Relay Khóa Ngăn 2** | `IN2` | `GPIO 27` | Output (`RELAY_ACTIVE_LOW = True`, kích mức `LOW`) |
-| **Relay Khóa Ngăn 3** | `IN3` | `GPIO 22` | Output (`RELAY_ACTIVE_LOW = True`, kích mức `LOW`) |
+| **Servo Ngăn 1 (Vàng/Cam)** | `Signal (PWM)` | `GPIO 17` | Output (PWM 50Hz, 0° = Khóa, 90° = Mở) |
+| **Servo Ngăn 2 (Vàng/Cam)** | `Signal (PWM)` | `GPIO 27` | Output (PWM 50Hz, 0° = Khóa, 90° = Mở) |
+| **Servo Ngăn 3 (Vàng/Cam)** | `Signal (PWM)` | `GPIO 22` | Output (PWM 50Hz, 0° = Khóa, 90° = Mở) |
 | **Còi báo Buzzer** | `I/O (+)` | `GPIO 26` | Output (`BUZZER_ACTIVE_HIGH = True`, kích mức `HIGH`) |
 | **Màn hình LCD 1602 I2C** | `SDA` / `SCL` | `GPIO 2 (SDA)` / `GPIO 3 (SCL)` | Bus I2C số `1` (`LCD_I2C_BUS = 1`), Địa chỉ `0x27` |
 
