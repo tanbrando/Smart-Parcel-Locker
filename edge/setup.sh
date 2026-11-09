@@ -14,7 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # - Nếu bạn có venv sẵn trên Pi, hãy điền đường dẫn tuyệt đối hoặc tương đối vào đây:
 #   Ví dụ: CUSTOM_VENV_PATH="/home/pi/my_env" hoặc CUSTOM_VENV_PATH="$HOME/venv"
 # - Nếu để trống (""), script sẽ mặc định tìm hoặc tạo venv tại: "$SCRIPT_DIR/venv"
-CUSTOM_VENV_PATH=""
+CUSTOM_VENV_PATH="~/IOT/.venv"
+
+# Mở rộng dấu ngã (~) thành $HOME nếu người dùng đặt dấu ~ trong chuỗi ngoặc kép
+CUSTOM_VENV_PATH="${CUSTOM_VENV_PATH/#\~/$HOME}"
 
 # Xác định đường dẫn venv mục tiêu
 TARGET_VENV="${CUSTOM_VENV_PATH:-$SCRIPT_DIR/venv}"
@@ -25,9 +28,10 @@ echo "📂 Thư mục mã nguồn: $SCRIPT_DIR"
 echo "🐍 Target venv: $TARGET_VENV"
 echo "=========================================================="
 
-# 1. Cập nhật hệ thống
-echo "📦 [1/5] Cập nhật apt repositories..."
-sudo apt update && sudo apt upgrade -y
+# 1. Cập nhật danh sách gói phần mềm (apt update)
+# Lưu ý: Bỏ qua 'apt upgrade' để tránh mất thời gian cập nhật toàn bộ hệ điều hành
+echo "📦 [1/5] Cập nhật danh sách gói phần mềm (apt update)..."
+sudo apt update
 
 # 2. Cài đặt các gói thư viện hệ thống (System Dependencies)
 # - libzbar0, libzbar-dev: Đọc mã QR & Barcode (pyzbar)
