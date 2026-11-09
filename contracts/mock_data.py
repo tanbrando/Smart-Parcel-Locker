@@ -17,10 +17,10 @@ from contracts.schemas import (
 
 # Mock Waybill Scans
 MOCK_SCAN_VALID_SPX = ScanResult(
-    tracking_number="SPX038472918VN",
-    raw_text="SPX Express - SPX038472918VN - Khoi luong: 450g",
+    tracking_number="SPXVN048291048",
+    raw_text="SPX Express - SPXVN048291048 - Khoi luong: 520g",
     barcode_type="CODE128",
-    weight_declared=450.0,
+    weight_declared=520.0,
     confidence=0.98,
     timestamp=datetime.now(timezone.utc),
 )
@@ -46,8 +46,8 @@ MOCK_SCAN_UNKNOWN = ScanResult(
 # Mock Load Cell Weight Deltas
 MOCK_WEIGHT_MEASUREMENT_MATCH = WeightMeasurement(
     locker_id=1,
-    current_weight_grams=455.0,
-    delta_grams=455.0,
+    current_weight_grams=495.0,
+    delta_grams=495.0,
     is_stable=True,
     timestamp=datetime.now(timezone.utc),
 )
@@ -62,90 +62,90 @@ MOCK_WEIGHT_MEASUREMENT_EMPTY = WeightMeasurement(
 
 # Mock Server API Responses
 MOCK_VERIFY_RESPONSE_SUCCESS = PackageVerificationResponse(
-    verified=True,
-    order_id="ord-spx-001",
-    locker_id=1,
-    declared_weight_grams=450.0,
-    tolerance_grams=100.0,
-    message="Package authorized for Locker 1",
+    action="UNLOCK_DOOR",
+    locker_number=1,
+    order_id=105,
+    customer_name="Minh Tấn",
+    max_allowed_weight=5000,
+    message="Mở ngăn số 1",
 )
 
-MOCK_VERIFY_RESPONSE_NOT_FOUND = PackageVerificationResponse(
-    verified=False,
-    order_id=None,
-    locker_id=None,
-    declared_weight_grams=None,
-    tolerance_grams=100.0,
-    message="Tracking number not found or already processed",
+MOCK_VERIFY_RESPONSE_REJECT = PackageVerificationResponse(
+    action="REJECT",
+    reason="ORDER_NOT_FOUND_OR_LOCKER_FULL",
+    message="Đơn chưa đăng ký hoặc tủ đã đầy!",
 )
 
 MOCK_DEPOSIT_RESPONSE_SUCCESS = DepositConfirmationResponse(
     success=True,
-    order_id="ord-spx-001",
-    locker_id=1,
-    message="Parcel successfully verified and secured in locker 1",
+    status=OrderStatus.STORED,
+    otp_generated="829104",
+    weight_matched=True,
+    deviation_gram=25,
 )
 
 MOCK_OTP_RESPONSE_SUCCESS = OtpVerificationResponse(
-    success=True,
-    locker_id=1,
-    order_id="ord-spx-001",
-    message="OTP validated. Opening locker 1",
+    valid=True,
+    locker_number=1,
+    order_id=105,
+    message="Mã chính xác. Đang mở ngăn số 1.",
 )
 
 # Mock Lockers & Orders
 MOCK_LOCKERS = [
     LockerInfo(
         id=1,
-        locker_number="L01",
-        status=LockerStatus.AVAILABLE,
-        current_order_id=None,
-        current_weight_grams=0.0,
-        max_weight_capacity_grams=5000.0,
+        locker_number=1,
+        status=LockerStatus.EMPTY,
+        current_weight=0,
+        max_weight=5000,
+        updated_at=datetime.now(timezone.utc),
     ),
     LockerInfo(
         id=2,
-        locker_number="L02",
+        locker_number=2,
         status=LockerStatus.OCCUPIED,
-        current_order_id="ord-existing-002",
-        current_weight_grams=820.0,
-        max_weight_capacity_grams=5000.0,
+        current_weight=820,
+        max_weight=5000,
+        updated_at=datetime.now(timezone.utc),
     ),
     LockerInfo(
         id=3,
-        locker_number="L03",
+        locker_number=3,
         status=LockerStatus.MAINTENANCE,
-        current_order_id=None,
-        current_weight_grams=0.0,
-        max_weight_capacity_grams=5000.0,
+        current_weight=0,
+        max_weight=5000,
+        updated_at=datetime.now(timezone.utc),
     ),
 ]
 
 MOCK_ORDERS = [
     OrderResponse(
-        id="ord-spx-001",
-        tracking_number="SPX038472918VN",
-        recipient_name="Nguyen Van A",
-        recipient_phone="0912345678",
-        declared_weight_grams=450.0,
-        actual_weight_grams=None,
-        status=OrderStatus.PENDING,
+        id=101,
+        user_id=1,
         locker_id=None,
+        tracking_number="SPXVN048291048",
+        order_code="2610248K9J2L",
+        expected_weight=520,
+        actual_weight=None,
         otp_code=None,
-        telegram_chat_id="123456789",
+        status=OrderStatus.REGISTERED,
         created_at=datetime.now(timezone.utc),
+        recipient_name="Nguyễn Minh Tấn",
+        recipient_phone="0912343456",
     ),
     OrderResponse(
-        id="ord-existing-002",
-        tracking_number="GHN78921820",
-        recipient_name="Tran Thi B",
-        recipient_phone="0987654321",
-        declared_weight_grams=800.0,
-        actual_weight_grams=820.0,
-        status=OrderStatus.DEPOSITED,
+        id=102,
+        user_id=2,
         locker_id=2,
+        tracking_number="GHN78921820",
+        order_code="189201ABCD",
+        expected_weight=800,
+        actual_weight=820,
         otp_code="582194",
-        telegram_chat_id="987654321",
+        status=OrderStatus.STORED,
         created_at=datetime.now(timezone.utc),
+        recipient_name="Trần Thị Hoa",
+        recipient_phone="0987654321",
     ),
 ]
