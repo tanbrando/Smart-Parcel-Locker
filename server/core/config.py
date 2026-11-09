@@ -16,13 +16,16 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None
-    TELEGRAM_DEFAULT_CHAT_ID: Optional[str] = None
+    TELEGRAM_DEFAULT_CHAT_ID: Optional[int] = None
+    TELEGRAM_BOT_USERNAME: str = "SmartParcelLockerBot"
+    ENABLE_TELEGRAM_BOT_POLLING: bool = True
 
     # OTP and Locker rules
-    OTP_VALID_MINUTES: int = 30
+    OTP_VALID_HOURS: int = 72
     OTP_LENGTH: int = 6
     MAX_OTP_ATTEMPTS: int = 3
-    WEIGHT_TOLERANCE_GRAMS: float = 150.0
+    LOCKOUT_SECONDS: int = 60
+    WEIGHT_TOLERANCE_GRAMS: int = 150
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,4 +35,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

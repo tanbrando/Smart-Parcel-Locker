@@ -1,234 +1,158 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Parcel Locker - Dashboard</title>
-  <style>
-    :root {
-      --primary: #2563eb;
-      --bg: #f8fafc;
-      --card-bg: #ffffff;
-      --text: #1e293b;
-      --border: #e2e8f0;
-      --success: #16a34a;
-      --warning: #ca8a04;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      margin: 0;
-      padding: 24px;
-      background-color: var(--bg);
-      color: var(--text);
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 20px;
-    }
-    .card {
-      background: var(--card-bg);
-      border-radius: 8px;
-      padding: 20px;
-      border: 1px solid var(--border);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    h2 { margin-top: 0; font-size: 1.15rem; }
-    .form-group {
-      margin-bottom: 14px;
-    }
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 500;
-      font-size: 0.9rem;
-    }
-    input, button {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 0.95rem;
-    }
-    button {
-      background: var(--primary);
-      color: #fff;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      margin-top: 8px;
-    }
-    button:hover { opacity: 0.9; }
-    .locker-badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    .status-AVAILABLE { background: #dcfce7; color: var(--success); }
-    .status-OCCUPIED { background: #fef9c3; color: var(--warning); }
-    .status-MAINTENANCE { background: #fee2e2; color: #dc2626; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
-  </style>
+  <title>SmartLocker - Bảng Điều Khiển Trung Tâm</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
 
-  <div class="header">
-    <h1>📦 Smart Parcel Locker Dashboard</h1>
-    <div>API Status: <span id="api-status" style="font-weight:bold; color:var(--warning)">Checking...</span></div>
-  </div>
+  <div class="app-container">
+    <!-- Shared Sidebar Container -->
+    <div id="sidebarContainer"></div>
 
-  <div class="grid">
-    <!-- Upload / Register Order -->
-    <div class="card">
-      <h2>📤 Register Parcel from Screenshot</h2>
-      <form id="orderForm">
-        <div class="form-group">
-          <label>Shopee / Courier Screenshot</label>
-          <input type="file" id="screenshot" accept="image/*" required>
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Xin chào, Quản trị viên</h1>
+          <p>Hệ thống giám sát và quản lý tủ giao nhận thông minh</p>
         </div>
-        <div class="form-group">
-          <label>Recipient Name</label>
-          <input type="text" id="recipientName" placeholder="e.g. Nguyen Van A" required>
+
+        <div class="top-bar-actions">
+          <input type="text" class="search-input-pill" placeholder="🔍 Tìm mã vận đơn, khách hàng...">
+          <button onclick="fetchAllData(); initDashboardPage();" class="action-pill-btn secondary">Làm Mới</button>
+          <a href="/orders" class="action-pill-btn">Xem Toàn Bộ Đơn Hàng ➔</a>
         </div>
-        <div class="form-group">
-          <label>Recipient Phone</label>
-          <input type="text" id="recipientPhone" placeholder="0912345678" required>
-        </div>
-        <div class="form-group">
-          <label>Telegram Chat ID (Optional)</label>
-          <input type="text" id="telegramChatId" placeholder="e.g. 123456789">
-        </div>
-        <button type="submit">Upload & Parse Order</button>
-      </form>
-      <div id="uploadResult" style="margin-top:12px; font-size:0.85rem;"></div>
-    </div>
+      </div>
 
-    <!-- Locker Status Monitor -->
-    <div class="card">
-      <h2>🔐 Locker Compartments</h2>
-      <button onclick="fetchLockers()" style="width: auto; margin-bottom: 12px; background: #64748b;">Refresh Lockers</button>
-      <div id="lockersContainer">Loading compartments...</div>
-    </div>
-  </div>
-
-  <!-- Recent Orders Table -->
-  <div class="card" style="margin-top: 24px;">
-    <h2>📋 Recent Orders</h2>
-    <table id="ordersTable">
-      <thead>
-        <tr>
-          <th>Tracking No</th>
-          <th>Recipient</th>
-          <th>Phone</th>
-          <th>Status</th>
-          <th>Locker</th>
-          <th>OTP</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <script>
-    const API_BASE = "http://localhost:8000/api/v1";
-
-    async function checkHealth() {
-      try {
-        const res = await fetch("http://localhost:8000/health");
-        if (res.ok) {
-          document.getElementById("api-status").textContent = "ONLINE";
-          document.getElementById("api-status").style.color = "var(--success)";
-        }
-      } catch (e) {
-        document.getElementById("api-status").textContent = "OFFLINE";
-        document.getElementById("api-status").style.color = "#dc2626";
-      }
-    }
-
-    async function fetchLockers() {
-      try {
-        const res = await fetch(`${API_BASE}/lockers`);
-        const lockers = await res.json();
-        const container = document.getElementById("lockersContainer");
-        container.innerHTML = lockers.map(l => `
-          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee;">
-            <div>
-              <strong>${l.locker_number}</strong> (Max: ${l.max_weight_capacity_grams}g)
-              <div style="font-size:0.8rem; color:#666;">Current weight: ${l.current_weight_grams}g</div>
-            </div>
-            <span class="locker-badge status-${l.status}">${l.status}</span>
+      <!-- Metrics Bento Strip -->
+      <div class="metrics-strip">
+        <div class="metric-card">
+          <div class="metric-label">Tổng Bưu Kiện Tiếp Nhận</div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="kpiTotalOrders">0</span>
+            <span class="metric-sub">↗ 12%</span>
           </div>
-        `).join("");
-      } catch (e) {
-        console.error(e);
-      }
-    }
+        </div>
 
-    async function fetchOrders() {
-      try {
-        const res = await fetch(`${API_BASE}/orders`);
-        const orders = await res.json();
-        const tbody = document.querySelector("#ordersTable tbody");
-        tbody.innerHTML = orders.map(o => `
-          <tr>
-            <td><code>${o.tracking_number}</code></td>
-            <td>${o.recipient_name}</td>
-            <td>${o.recipient_phone}</td>
-            <td><span class="locker-badge">${o.status}</span></td>
-            <td>${o.locker_id || "-"}</td>
-            <td><code>${o.otp_code || "-"}</code></td>
-          </tr>
-        `).join("");
-      } catch (e) {
-        console.error(e);
-      }
-    }
+        <div class="metric-card">
+          <div class="metric-label">Đang Chờ Shipper Giao</div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="kpiPendingOrders">0</span>
+            <span class="metric-sub">Đơn mới</span>
+          </div>
+        </div>
 
-    document.getElementById("orderForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const fileInput = document.getElementById("screenshot");
-      const formData = new FormData();
-      formData.append("file", fileInput.files[0]);
-      formData.append("recipient_name", document.getElementById("recipientName").value);
-      formData.append("recipient_phone", document.getElementById("recipientPhone").value);
-      const tg = document.getElementById("telegramChatId").value;
-      if (tg) formData.append("telegram_chat_id", tg);
+        <div class="metric-card">
+          <div class="metric-label">Đang Lưu Trong Tủ</div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="kpiStoredOrders">0</span>
+            <span class="metric-sub">Chờ khách lấy</span>
+          </div>
+        </div>
 
-      const resDiv = document.getElementById("uploadResult");
-      resDiv.textContent = "Uploading & extracting OCR...";
-      try {
-        const res = await fetch(`${API_BASE}/orders/register-screenshot`, {
-          method: "POST",
-          body: formData,
-        });
-        const data = await res.json();
-        if (res.ok) {
-          resDiv.innerHTML = `<span style="color:var(--success)">Order registered! Tracking: <b>${data.tracking_number}</b></span>`;
-          fetchOrders();
-        } else {
-          resDiv.innerHTML = `<span style="color:#dc2626">Error: ${data.detail || "Upload failed"}</span>`;
-        }
-      } catch (err) {
-        resDiv.innerHTML = `<span style="color:#dc2626">Connection failed</span>`;
-      }
+        <div class="metric-card">
+          <div class="metric-label">Đã Nhận Thành Công</div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="kpiCollectedOrders">0</span>
+            <span class="metric-sub">Đã hoàn tất</span>
+          </div>
+        </div>
+
+        <!-- Highlight Yellow Card -->
+        <div class="metric-card highlight">
+          <div class="metric-label">Tỷ Lệ Lấp Đầy Tủ</div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="kpiOccupancyRate">0.0%</span>
+            <span class="metric-sub" id="kpiEmptyCount">3/3 trống</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline Funnel Card -->
+      <div class="bento-card">
+        <div class="bento-header">
+          <div>
+            <div class="bento-title">Quy Trình Bưu Kiện (Parcel Pipeline)</div>
+            <div class="bento-subtitle">Theo dõi hành trình từ đăng ký ảnh đến khi khách lấy hàng an toàn</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <span class="action-pill-btn secondary" style="font-size:0.75rem; padding:4px 12px;">30 Ngày Qua</span>
+          </div>
+        </div>
+
+        <div class="pipeline-grid">
+          <div class="pipeline-stage">
+            <span class="stage-badge yellow">1. Đã Đăng Ký</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelRegisteredFill" style="width: 40%;"></div></div>
+            <div class="stage-value" id="funnelRegisteredCount">0</div>
+            <div class="stage-label">Bưu kiện đăng ký OCR</div>
+          </div>
+
+          <div class="pipeline-stage">
+            <span class="stage-badge">2. Shipper Quét Đơn</span>
+            <div class="stage-track"><div class="stage-fill" style="width: 60%;"></div></div>
+            <div class="stage-value">100%</div>
+            <div class="stage-label">Camera Pi đọc mã vạch</div>
+          </div>
+
+          <div class="pipeline-stage">
+            <span class="stage-badge">3. Đã Bỏ Vào Tủ</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelStoredFill" style="width: 30%;"></div></div>
+            <div class="stage-value" id="funnelStoredCount">0</div>
+            <div class="stage-label">Cân tải trọng HX711</div>
+          </div>
+
+          <div class="pipeline-stage">
+            <span class="stage-badge dark">4. Đã Nhận Hàng</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelCollectedFill" style="width: 80%;"></div></div>
+            <div class="stage-value" id="funnelCollectedCount">0</div>
+            <div class="stage-label">Nhập OTP mở tủ</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lower Bento Grid (3 Columns) -->
+      <div class="bento-lower-grid">
+        <!-- Col 1: Lockers State -->
+        <div class="bento-card">
+          <div class="bento-header">
+            <div class="bento-title">Trạng Thái Ngăn Tủ</div>
+            <a href="/lockers" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Chi tiết ➔</a>
+          </div>
+          <div id="dashLockersList">Đang tải...</div>
+        </div>
+
+        <!-- Col 2: Recent Orders & Anti-Fraud -->
+        <div class="bento-card">
+          <div class="bento-header">
+            <div class="bento-title">Bưu Kiện Gần Đây</div>
+            <a href="/orders" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Tất cả ➔</a>
+          </div>
+          <div id="dashRecentOrdersList">Đang tải...</div>
+        </div>
+
+        <!-- Col 3: Real-time Access Logs -->
+        <div class="bento-card">
+          <div class="bento-header">
+            <div class="bento-title">Nhật Ký Sự Kiện</div>
+            <a href="/logs" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Lịch sử ➔</a>
+          </div>
+          <div id="dashRecentLogsList">Đang tải...</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initDashboardPage();
     });
-
-    checkHealth();
-    fetchLockers();
-    fetchOrders();
   </script>
 </body>
 </html>
-
