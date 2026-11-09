@@ -126,6 +126,15 @@ class LockController:
         """Checks reed switch / magnetic contact sensor state."""
         return self.door_status.get(locker_id, True)
 
+    def wait_for_door_closed(self, locker_id: int, timeout_seconds: float = 60.0, poll_interval: float = 0.1) -> bool:
+        """Waits until the door contact sensor confirms the locker is closed, or timeout expires."""
+        start = time.time()
+        while time.time() - start < timeout_seconds:
+            if self.is_door_closed(locker_id):
+                return True
+            time.sleep(poll_interval)
+        return self.is_door_closed(locker_id)
+
     def lock_all(self):
         """Forces all servos to rotate to SERVO_LOCKED_ANGLE."""
         for locker_id in self.servo_pins:
@@ -160,6 +169,11 @@ def get_lock_controller() -> LockController:
 def open_locker_door(locker_id: int, duration_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
     """Contract convenience function to unlock a locker compartment for Person 3."""
     return get_lock_controller().open_locker_door(locker_id=locker_id, duration_sec=duration_sec)
+
+
+def wait_for_door_closed(locker_id: int, timeout_seconds: float = 60.0) -> bool:
+    """Contract convenience function to wait for locker door closure."""
+    return get_lock_controller().wait_for_door_closed(locker_id=locker_id, timeout_seconds=timeout_seconds)
 
 
 

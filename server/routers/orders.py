@@ -4,13 +4,14 @@ Handles screenshot uploads with user recognition (via user_id or telegram_chat_i
 manual parcel registration, and query endpoints.
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, status
 from sqlalchemy.orm import Session
 
 from contracts.schemas import (
     ScreenshotRegisterResponse,
     ScreenshotRegisterData,
     OrderResponse,
+    UserCreateRequest,
     UserResponse,
     OrderStatus,
 )
@@ -167,19 +168,17 @@ def list_users(db: Session = Depends(get_db)):
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
-    full_name: str = Form(...),
-    phone: str = Form(...),
-    telegram_chat_id: Optional[int] = Form(None),
+    payload: UserCreateRequest,
     db: Session = Depends(get_db),
 ):
     """Admin endpoint: Registers a new user."""
-    phone_clean = phone.strip()
+    phone_clean = payload.phone.strip()
     phone_last4 = phone_clean[-4:] if len(phone_clean) >= 4 else phone_clean
     user = User(
-        full_name=full_name.strip(),
+        full_name=payload.full_name.strip(),
         phone=phone_clean,
         phone_last4=phone_last4,
-        telegram_chat_id=telegram_chat_id,
+        telegram_chat_id=payload.telegram_chat_id,
     )
     db.add(user)
     db.commit()

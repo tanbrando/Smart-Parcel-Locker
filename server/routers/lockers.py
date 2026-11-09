@@ -29,6 +29,7 @@ def get_locker(locker_number: int, db: Session = Depends(get_db)):
     return locker
 
 
+@router.patch("/{locker_number}/maintenance", response_model=LockerInfo)
 @router.post("/{locker_number}/maintenance", response_model=LockerInfo)
 def toggle_maintenance(locker_number: int, db: Session = Depends(get_db)):
     """Toggles locker maintenance status."""
@@ -47,6 +48,7 @@ def toggle_maintenance(locker_number: int, db: Session = Depends(get_db)):
     return locker
 
 
+@router.get("/logs", response_model=List[AccessLogResponse])
 @router.get("/admin/logs", response_model=List[AccessLogResponse])
 def get_access_logs(limit: int = 50, db: Session = Depends(get_db)):
     """Fetches recent security & access audit logs."""

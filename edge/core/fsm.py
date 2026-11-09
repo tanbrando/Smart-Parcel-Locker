@@ -118,17 +118,17 @@ class LockerStateMachine:
             return False
 
         locker_id = auth.locker_id
-        order_id = auth.order_id or "unknown"
+        order_id = auth.order_id or 0
         logger.info("Package authorized for Locker %d", locker_id)
 
         # 3. Unlock locker door
         self.transition_to(SystemState.UNLOCKED_DEPOSIT)
         self.indicators.success_sound()
-        self.indicators.display_message(f"Locker {locker_num} Open", "Insert Parcel")
+        self.indicators.display_message(f"Locker {locker_id} Open", "Insert Parcel")
 
         # Tare before parcel placement
-        self.loadcell.tare(locker_num)
-        self.lock.open_locker_door(locker_num)
+        self.loadcell.tare(locker_id)
+        self.lock.open_locker_door(locker_id)
 
         # 4. Measure weight
         self.transition_to(SystemState.WEIGHING)
@@ -147,7 +147,10 @@ class LockerStateMachine:
         decision = verify_deposit_integrity(auth, measurement)
         if decision.action != DepositAction.CONFIRM_SERVER_AND_LOCK:
             logger.warning("Deposit rejected by edge integrity check: %s", decision.message)
-            self.indicators.error_sound()
+            if decision.action == DepositAction.TRIGGER_BUZZER_ALARM:
+                self.indicators.alarm_sound()
+            else:
+                self.indicators.error_sound()
             self.indicators.display_message("Deposit Error", decision.message[:16])
             self.transition_to(SystemState.ERROR)
             time.sleep(2.0)
@@ -155,17 +158,21 @@ class LockerStateMachine:
             return False
 
         # 5. Confirm deposit to server
+        measured_weight_val = measurement.delta_weight if measurement.delta_weight != 0.0 else measurement.delta_grams
+        measured_int = int(round(measured_weight_val))
+        order_id_int = int(order_id) if str(order_id).isdigit() else 0
+
         self.transition_to(SystemState.DEPOSIT_CONFIRMED)
         confirm_res = self.api_client.confirm_deposit(
-            order_id=order_id,
-            locker_number=locker_num,
+            order_id=order_id_int,
+            locker_number=locker_id,
             delta_weight=measured_int,
         )
 
         if confirm_res.success:
             self.indicators.success_sound()
-            self.indicators.display_message("Deposit Success!", f"Locker {locker_num} Locked")
-            logger.info("Deposit successfully completed for order #%d. OTP: %s", order_id, confirm_res.otp_generated)
+            self.indicators.display_message("Deposit Success!", f"Locker {locker_id} Locked")
+            logger.info("Deposit successfully completed for order #%s. OTP: %s", order_id, confirm_res.otp_generated)
         else:
             self.indicators.error_sound()
             self.indicators.display_message("Confirm Error", "Deposit failed")
@@ -197,12 +204,13 @@ class LockerStateMachine:
         self.indicators.display_message("Checking OTP...", pin)
         otp_res = self.api_client.handle_otp_submission(pin)
 
-        if otp_res.valid and otp_res.locker_number is not None:
+        target_locker = otp_res.locker_number or otp_res.locker_id
+        if otp_res.valid and target_locker is not None:
             self.keypad.reset_attempts()
             self.transition_to(SystemState.RETRIEVING)
             self.indicators.success_sound()
-            self.indicators.display_message(f"Locker {otp_res.locker_number} Open", "Take Your Parcel")
-            self.lock.open_locker_door(otp_res.locker_number)
+            self.indicators.display_message(f"Locker {target_locker} Open", "Take Your Parcel")
+            self.lock.open_locker_door(target_locker)
             time.sleep(2.0)
             self.transition_to(SystemState.IDLE)
             return True
