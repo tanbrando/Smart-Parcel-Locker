@@ -24,9 +24,7 @@ def setup_signal_handlers(fsm: LockerStateMachine):
         logger.info("\nReceived exit signal (%s). Cleaning up hardware...", sig)
         try:
             fsm.indicators.clear()
-            if not MOCK_HARDWARE:
-                import RPi.GPIO as GPIO
-                GPIO.cleanup()
+            fsm.lock.cleanup()
         except Exception as exc:
             logger.warning("Error during GPIO cleanup: %s", exc)
         logger.info("Edge system shutdown complete.")
@@ -89,4 +87,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

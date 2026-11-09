@@ -9,7 +9,7 @@ An automated, intelligent IoT Smart Parcel Locker system powered by **Raspberry 
 | Role | Module | Primary Owner | Responsibilities |
 |---|---|---|---|
 | **Quốc** | `edge/cv/` | Computer Vision Engineer | Camera stream capture, QR/Barcode decoding (pyzbar), Waybill label OCR (PaddleOCR/Regex parsers). |
-| **Việt** | `edge/hardware/` | Hardware & Embedded Driver Dev | Load Cell HX711 sensor (anti-fraud weight delta), Solenoid relay door triggers, LCD 1602 (I2C), and Buzzer. |
+| **Việt** | `edge/hardware/` | Hardware & Embedded Driver Dev | Load Cell HX711 sensor (anti-fraud weight delta), PWM servo door latches, LCD 1602 (I2C), and Buzzer. |
 | **Nhật** | `edge/core/` | System & FSM Engineer | Finite State Machine orchestration, 4x4 Keypad rate-limiting / lockout, Edge API client, and `edge/main.py`. |
 | **Tấn** | `server/` & `web/` | Full-stack & Cloud Architect | FastAPI server, SQLite/PostgreSQL ORM, Shopee screenshot OCR, OTP generator & rate limiter, Telegram Bot alerts, and Web Dashboard. |
 
@@ -28,7 +28,7 @@ smart-parcel-locker/
 │   └── mock_data.py            # Reusable mock records for cross-module testing
 ├── edge/                       # Code deployed to Raspberry Pi 4B
 │   ├── requirements.txt        # Edge dependencies (pyzbar, RPi.GPIO, opencv)
-│   ├── config.py               # Pinout mapping, camera index, server endpoint
+│   ├── config.py               # Servo pinout, angles, camera index, server endpoint
 │   ├── main.py                 # Edge supervisor & FSM runtime
 │   ├── cv/                     # [QUỐC]
 │   │   ├── __init__.py
@@ -111,9 +111,18 @@ pytest tests/
 1. User uploads Shopee order screenshot on Web / App -> Server parses tracking & weight -> Order in PENDING.
 2. Courier arrives -> CV Scanner reads waybill barcode/QR -> Edge sends verify-package to Server.
 3. Server checks order -> Validates status -> Assigns available Locker -> Sends unlock signal.
-4. Edge opens Locker Solenoid Relay -> Courier places parcel -> Edge measures weight delta via HX711.
+4. Edge moves the locker PWM servo to its open angle -> Courier places parcel -> Edge measures weight delta via HX711.
 5. Weight matches declared weight (+/- tolerance) -> Edge confirms deposit to Server.
 6. Server marks Order DEPOSITED -> Generates 6-digit OTP -> Sends Telegram notification with OTP to Recipient.
-7. Recipient arrives -> Inputs OTP via 4x4 Keypad -> Edge verifies OTP with Server -> Locker door pops open.
+7. Recipient arrives -> Inputs OTP via 4x4 Keypad -> Edge verifies OTP with Server -> Locker servo moves to the open angle.
 ```
 
+### Servo latch hardware
+
+Each locker uses one hobby servo connected to a Raspberry Pi BCM GPIO PWM-capable output.
+The default pins are 17, 27, and 22 for lockers 1–3. Configure wiring-specific values
+with `LOCKER_1_SERVO_PIN`, `LOCKER_2_SERVO_PIN`, and `LOCKER_3_SERVO_PIN`.
+The controller uses 50 Hz PWM by default and maps `SERVO_CLOSED_ANGLE` (0°) and
+`SERVO_OPEN_ANGLE` (90°) to the latch positions. Override these values, plus
+`DOOR_UNLOCK_DURATION_SEC`, through environment variables. On Windows and other
+non-Pi systems, hardware is automatically mocked.

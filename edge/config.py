@@ -25,14 +25,17 @@ CAMERA_FRAME_HEIGHT: int = 720
 SCAN_TIMEOUT_SECONDS: float = 12.0
 
 # GPIO Pinout Mapping (BCM Numbers)
-# Solenoid Relays (Active LOW or HIGH depending on relay board; standard: LOW trigger)
-LOCKER_RELAY_PINS: Dict[int, int] = {
-    1: 17,  # Locker 1 Solenoid Relay
-    2: 27,  # Locker 2 Solenoid Relay
-    3: 22,  # Locker 3 Solenoid Relay
+# One hobby servo controls each locker latch. Individual pin overrides are
+# useful when the physical wiring differs from the default three-locker layout.
+LOCKER_SERVO_PINS: Dict[int, int] = {
+    1: int(os.getenv("LOCKER_1_SERVO_PIN", "17")),
+    2: int(os.getenv("LOCKER_2_SERVO_PIN", "27")),
+    3: int(os.getenv("LOCKER_3_SERVO_PIN", "22")),
 }
-RELAY_ACTIVE_LOW: bool = True
-DOOR_UNLOCK_DURATION_SEC: float = 4.0
+SERVO_PWM_FREQUENCY: float = float(os.getenv("SERVO_PWM_FREQUENCY", "50.0"))
+SERVO_OPEN_ANGLE: float = float(os.getenv("SERVO_OPEN_ANGLE", "90.0"))
+SERVO_CLOSED_ANGLE: float = float(os.getenv("SERVO_CLOSED_ANGLE", "0.0"))
+DOOR_UNLOCK_DURATION_SEC: float = float(os.getenv("DOOR_UNLOCK_DURATION_SEC", "4.0"))
 
 # Load Cell HX711 Pinout
 HX711_DT_PIN: int = 5
@@ -55,4 +58,3 @@ LCD_ROWS: int = 2
 
 BUZZER_PIN: int = 26
 BUZZER_ACTIVE_HIGH: bool = True
-
