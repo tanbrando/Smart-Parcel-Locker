@@ -3,33 +3,26 @@
 # Script cài đặt môi trường cho Raspberry Pi 4B - Smart Parcel Locker (Edge Node)
 # Tác giả: Quốc (AI / Computer Vision & Edge)
 # ==============================================================================
+# Logic: Môi trường ảo (venv) sẽ được tạo và dùng chung ngay tại thư mục gốc dự án:
+#        Smart-Parcel-Locker/.venv
+# ==============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ==============================================================================
-# 🔧 CẤU HÌNH ĐƯỜNG DẪN VENV (BẠN TỰ ĐIỀN ĐƯỜNG DẪN CỦA MÌNH VÀO ĐÂY)
-# ==============================================================================
-# - Nếu bạn có venv sẵn trên Pi, hãy điền đường dẫn tuyệt đối hoặc tương đối vào đây:
-#   Ví dụ: CUSTOM_VENV_PATH="/home/pi/my_env" hoặc CUSTOM_VENV_PATH="$HOME/venv"
-# - Nếu để trống (""), script sẽ mặc định tìm hoặc tạo venv tại: "$SCRIPT_DIR/venv"
-CUSTOM_VENV_PATH="~/IOT/.venv"
-
-# Mở rộng dấu ngã (~) thành $HOME nếu người dùng đặt dấu ~ trong chuỗi ngoặc kép
-CUSTOM_VENV_PATH="${CUSTOM_VENV_PATH/#\~/$HOME}"
-
-# Xác định đường dẫn venv mục tiêu
-TARGET_VENV="${CUSTOM_VENV_PATH:-$SCRIPT_DIR/venv}"
+# Thiết lập đường dẫn venv cố định tại thư mục gốc dự án: Smart-Parcel-Locker/.venv
+TARGET_VENV="$PROJECT_ROOT/.venv"
 
 echo "=========================================================="
 echo "🚀 Bắt đầu cài đặt môi trường Smart Parcel Locker trên Pi..."
-echo "📂 Thư mục mã nguồn: $SCRIPT_DIR"
+echo "📂 Thư mục gốc dự án: $PROJECT_ROOT"
+echo "📂 Thư mục Edge: $SCRIPT_DIR"
 echo "🐍 Target venv: $TARGET_VENV"
 echo "=========================================================="
 
 # 1. Cập nhật danh sách gói phần mềm (apt update)
-# Lưu ý: Bỏ qua 'apt upgrade' để tránh mất thời gian cập nhật toàn bộ hệ điều hành
 echo "📦 [1/5] Cập nhật danh sách gói phần mềm (apt update)..."
 sudo apt update
 
@@ -58,20 +51,26 @@ sudo apt install -y \
 echo "🔧 [3/5] Cấu hình phần cứng (I2C)..."
 sudo raspi-config nonint do_i2c 0 || true
 
-# 4. Kiểm tra venv theo cấu hình; nếu không tìm thấy thì tự động tạo mới
-echo "🐍 [4/5] Thiết lập môi trường ảo Python (venv)..."
+# 4. Kiểm tra và tạo venv tại Smart-Parcel-Locker/.venv
+echo "🐍 [4/5] Thiết lập môi trường ảo Python (.venv)..."
 if [ -d "$TARGET_VENV" ] && [ -f "$TARGET_VENV/bin/activate" ]; then
-    echo "✅ Đã tìm thấy venv có sẵn tại: $TARGET_VENV"
+    echo "✅ Đã tìm thấy .venv sẵn có tại: $TARGET_VENV"
 else
-    echo "⚠️ Không tìm thấy venv tại '$TARGET_VENV'. Tiến hành tạo venv mới..."
+    echo "⚙️ Đang khởi tạo môi trường ảo mới tại: $TARGET_VENV..."
     # Lưu ý: Cờ --system-site-packages bắt buộc để Python truy cập được picamera2 của hệ thống Pi
     python3 -m venv --system-site-packages "$TARGET_VENV"
-    echo "✅ Đã tạo mới venv tại: $TARGET_VENV"
+    echo "✅ Đã tạo thành công .venv tại: $TARGET_VENV"
 fi
 
 # Kích hoạt venv
 source "$TARGET_VENV/bin/activate"
 echo "👉 Đang sử dụng Python: $(which python)"
+
+# Đảm bảo pip của đúng target venv được sử dụng
+if [[ "$(which python)" != "$TARGET_VENV"* ]]; then
+    echo "❌ Lỗi: Chưa kích hoạt đúng venv tại $TARGET_VENV!"
+    exit 1
+fi
 
 # 5. Cài đặt các thư viện từ requirements.txt của Edge
 echo "📥 [5/5] Cài đặt các package từ edge/requirements.txt..."
