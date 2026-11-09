@@ -4,6 +4,14 @@ Hardware Pinout and System Configurations for Raspberry Pi 4B Edge Device.
 import os
 from typing import Dict, List
 
+# Load .env configuration if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+except ImportError:
+    pass
+
 # Server Network Configuration
 SERVER_API_URL: str = os.getenv("SERVER_API_URL", "http://localhost:8000")
 API_TIMEOUT_SECONDS: float = float(os.getenv("API_TIMEOUT_SECONDS", "5.0"))
