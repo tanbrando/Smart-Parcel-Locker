@@ -14,7 +14,7 @@ except ImportError:
 
 # Server Network Configuration
 SERVER_API_URL: str = os.getenv("SERVER_API_URL", "http://localhost:8000")
-API_TIMEOUT_SECONDS: float = float(os.getenv("API_TIMEOUT_SECONDS", "5.0"))
+API_TIMEOUT_SECONDS: float = float(os.getenv("API_TIMEOUT_SECONDS", "15.0"))
 
 # Hardware Mock Mode Switch
 # Automatically true if not running on Raspberry Pi or if env var is set

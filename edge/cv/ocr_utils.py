@@ -223,13 +223,13 @@ def _run_paddle_lines_isolated(image_input: Union[str, bytes, np.ndarray]) -> Li
                 pass
 
 
-def _run_rapidocr_lines(img_bgr: np.ndarray) -> List[str]:
-    """Optional lightweight ONNX OCR fallback via rapidocr_onnxruntime."""
+def _run_rapidocr_lines(img_bgr: np.ndarray) -> Optional[List[str]]:
+    """Optional lightweight ONNX OCR fallback via rapidocr_onnxruntime. Returns None if unavailable."""
     global _RAPID_OCR_INSTANCE
     try:
         from rapidocr_onnxruntime import RapidOCR
     except ImportError:
-        return []
+        return None
 
     if _RAPID_OCR_INSTANCE is None:
         logger.info("Initializing RapidOCR ONNX engine...")
@@ -240,21 +240,22 @@ def _run_rapidocr_lines(img_bgr: np.ndarray) -> List[str]:
     return [str(item[1]).strip() for item in res if len(item) >= 2 and str(item[1]).strip()]
 
 
-def _run_tesseract_lines(img_bgr: np.ndarray) -> List[str]:
-    """Native Tesseract OCR fallback (crash-free on Raspberry Pi ARM64)."""
+def _run_tesseract_lines(img_bgr: np.ndarray) -> Optional[List[str]]:
+    """Native Tesseract OCR fallback (crash-free on Raspberry Pi ARM64). Returns None if unavailable."""
+    import shutil
+    if not shutil.which("tesseract"):
+        return None
     try:
         import cv2
         import pytesseract
     except ImportError:
-        return []
+        return None
 
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     for lang in ("vie+eng", "eng"):
         try:
             text = pytesseract.image_to_string(rgb, lang=lang)
-            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            if lines:
-                return lines
+            return [ln.strip() for ln in text.splitlines() if ln.strip()]
         except Exception:
             continue
     return []
@@ -273,18 +274,18 @@ def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
     is_arm = platform.machine().lower() in ("aarch64", "arm64", "armv7l", "armv6l")
 
     if engine == "tesseract":
-        return _run_tesseract_lines(img_bgr)
+        return _run_tesseract_lines(img_bgr) or []
     if engine == "rapidocr":
-        return _run_rapidocr_lines(img_bgr)
+        return _run_rapidocr_lines(img_bgr) or []
     if engine == "paddle":
         return _run_paddle_lines_isolated(image_input) if is_arm else _run_paddle_lines_in_process(img_bgr)
 
     # Auto mode:
-    # - On Raspberry Pi (ARM), prioritize native ARM-safe engines first to avoid PaddlePaddle SIGSEGV
+    # - On Raspberry Pi (ARM), use the first available ARM-safe engine without falling into broken PaddleOCR
     if is_arm:
         for runner in (_run_rapidocr_lines, _run_tesseract_lines):
             lines = runner(img_bgr)
-            if lines:
+            if lines is not None:
                 return lines
         return _run_paddle_lines_isolated(image_input)
 
