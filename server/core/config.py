@@ -1,8 +1,12 @@
 """
 Server Configuration Settings using Pydantic Settings.
 """
+from pathlib import Path
 from typing import Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -27,8 +31,22 @@ class Settings(BaseSettings):
     LOCKOUT_SECONDS: int = 60
     WEIGHT_TOLERANCE_GRAMS: int = 150
 
+    @field_validator("TELEGRAM_DEFAULT_CHAT_ID", mode="before")
+    @classmethod
+    def _empty_str_to_none_int(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("TELEGRAM_BOT_TOKEN", mode="before")
+    @classmethod
+    def _empty_str_to_none_str(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(REPO_ROOT / ".env"), str(REPO_ROOT / "server" / ".env")),
         env_file_encoding="utf-8",
         extra="ignore",
     )
