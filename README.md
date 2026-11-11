@@ -87,15 +87,15 @@ uvicorn main:app --reload --port 8000
 ```
 API Documentation will be available at: `http://localhost:8000/docs`
 
-### 2. Edge / Raspberry Pi Setup
+### 2. All-in-One Setup & Run on Raspberry Pi
+See full wiring/pinout and per-component testing instructions in [`HARDWARE_GUIDE.md`](HARDWARE_GUIDE.md).
 ```bash
-cd edge
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+chmod +x setup.sh run_all.sh
+./setup.sh
 
-# Run Edge Controller (automatically falls back to Mock Hardware if not on Raspberry Pi)
-python main.py
+# Run FastAPI Server + Web Dashboard + Telegram Bot + Edge FSM together:
+./run_all.sh         # Physical hardware mode
+./run_all.sh --mock  # Interactive CLI mock mode
 ```
 ### 3. Run Tests
 ```bash

@@ -47,6 +47,8 @@ edge/
 
 ### Bảng đấu nối chân trên Raspberry Pi 4B (Theo chuẩn đánh số BCM trong `edge/config.py`)
 
+> 📘 **Xem hướng dẫn chi tiết từng chân Vật lý (Pin 1–40), Keypad 4x4 (`S1`–`S16`), Camera CSI, nguồn ngoài Servo và các lệnh test độc lập tại [`HARDWARE_GUIDE.md`](../../HARDWARE_GUIDE.md).**
+
 | Linh kiện | Chân tín hiệu | Chân Raspberry Pi (BCM) | Ghi chú cấu hình |
 | :--- | :--- | :--- | :--- |
 | **HX711 Load Cell** | `DT` (Data) | `GPIO 5` | Input (Đọc xung dữ liệu 24-bit) |
