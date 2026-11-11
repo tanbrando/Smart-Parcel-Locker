@@ -5,6 +5,11 @@ from order screenshots (Shopee / TikTok) and waybill labels using PaddleOCR & Re
 """
 import os
 import re
+import sys
+import json
+import platform
+import subprocess
+import tempfile
 import unicodedata
 import logging
 import warnings
@@ -98,6 +103,8 @@ VI_NAME_TOKEN_MAP = {
 }
 
 _OCR_INSTANCE = None
+_RAPID_OCR_INSTANCE = None
+_PADDLE_CRASHED = False
 
 
 def get_paddle_ocr():
@@ -117,11 +124,8 @@ def get_paddle_ocr():
     return _OCR_INSTANCE
 
 
-def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
-    """
-    Runs PaddleOCR on a file path, image bytes, or numpy BGR frame
-    and returns a list of recognized text lines in top-to-bottom order.
-    """
+def _decode_to_bgr(image_input: Union[str, bytes, np.ndarray]) -> np.ndarray:
+    """Normalizes file path, raw bytes, or ndarray into a BGR OpenCV image."""
     import cv2
 
     if isinstance(image_input, bytes):
@@ -129,16 +133,21 @@ def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError("Could not decode image bytes for OCR.")
-        target = img
-    elif isinstance(image_input, str):
+        return img
+    if isinstance(image_input, str):
         if not os.path.exists(image_input):
             raise FileNotFoundError(f"Image not found: {image_input}")
-        target = image_input
-    elif isinstance(image_input, np.ndarray):
-        target = image_input
-    else:
-        raise TypeError(f"Unsupported image_input type: {type(image_input)}")
+        img = cv2.imread(image_input)
+        if img is None:
+            raise ValueError(f"Unable to read image file: {image_input}")
+        return img
+    if isinstance(image_input, np.ndarray):
+        return image_input
+    raise TypeError(f"Unsupported image_input type: {type(image_input)}")
 
+
+def _run_paddle_lines_in_process(target: Union[str, np.ndarray]) -> List[str]:
+    """Runs PaddleOCR directly in the current process."""
     ocr = get_paddle_ocr()
     results = ocr.predict(target)
     if not results:
@@ -148,7 +157,6 @@ def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
     if isinstance(first_res, dict) and "rec_texts" in first_res:
         return [str(t).strip() for t in first_res["rec_texts"] if str(t).strip()]
 
-    # Fallback for older PaddleOCR 2.x list structure
     lines = []
     for line in first_res:
         if isinstance(line, (list, tuple)) and len(line) >= 2:
@@ -156,6 +164,143 @@ def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
             if txt.strip():
                 lines.append(txt.strip())
     return lines
+
+
+def _run_paddle_lines_isolated(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
+    """Runs PaddleOCR in a child process so C++ SIGSEGV never kills the main Server/Edge process."""
+    global _PADDLE_CRASHED
+    if _PADDLE_CRASHED:
+        return []
+
+    import cv2
+
+    tmp_path = None
+    target_path = image_input if isinstance(image_input, str) else None
+    try:
+        if target_path is None:
+            img_bgr = _decode_to_bgr(image_input)
+            fd, tmp_path = tempfile.mkstemp(suffix=".jpg", prefix="ocr_")
+            os.close(fd)
+            cv2.imwrite(tmp_path, img_bgr)
+            target_path = tmp_path
+
+        repo_root = os.path.dirname(EDGE_DIR)
+        worker_code = (
+            "import json, sys; "
+            "from edge.cv.ocr_utils import _run_paddle_lines_in_process; "
+            "lines = _run_paddle_lines_in_process(sys.argv[1]); "
+            "print('__OCR_JSON__:' + json.dumps(lines, ensure_ascii=False))"
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = repo_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        proc = subprocess.run(
+            [sys.executable, "-c", worker_code, target_path],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            env=env,
+        )
+        if proc.returncode != 0:
+            _PADDLE_CRASHED = True
+            logger.warning(
+                "PaddleOCR isolated worker exited with code %d; disabling PaddleOCR for this session.",
+                proc.returncode,
+            )
+            return []
+
+        for out_line in reversed(proc.stdout.splitlines()):
+            if out_line.startswith("__OCR_JSON__:"):
+                return json.loads(out_line.split("__OCR_JSON__:", 1)[1])
+        return []
+    except Exception as exc:
+        logger.warning("Isolated PaddleOCR execution failed: %s", exc)
+        return []
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _run_rapidocr_lines(img_bgr: np.ndarray) -> List[str]:
+    """Optional lightweight ONNX OCR fallback via rapidocr_onnxruntime."""
+    global _RAPID_OCR_INSTANCE
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError:
+        return []
+
+    if _RAPID_OCR_INSTANCE is None:
+        logger.info("Initializing RapidOCR ONNX engine...")
+        _RAPID_OCR_INSTANCE = RapidOCR()
+    res, _ = _RAPID_OCR_INSTANCE(img_bgr)
+    if not res:
+        return []
+    return [str(item[1]).strip() for item in res if len(item) >= 2 and str(item[1]).strip()]
+
+
+def _run_tesseract_lines(img_bgr: np.ndarray) -> List[str]:
+    """Native Tesseract OCR fallback (crash-free on Raspberry Pi ARM64)."""
+    try:
+        import cv2
+        import pytesseract
+    except ImportError:
+        return []
+
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    for lang in ("vie+eng", "eng"):
+        try:
+            text = pytesseract.image_to_string(rgb, lang=lang)
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            if lines:
+                return lines
+        except Exception:
+            continue
+    return []
+
+
+def run_ocr_lines(image_input: Union[str, bytes, np.ndarray]) -> List[str]:
+    """
+    Extracts recognized text lines from a file path, image bytes, or BGR ndarray.
+    Uses PaddleOCR on x86_64 PCs and crash-safe fallbacks (RapidOCR / Tesseract / isolated Paddle) on ARM/Pi.
+    """
+    engine = os.getenv("OCR_ENGINE", "auto").strip().lower()
+    if engine == "off":
+        return []
+
+    img_bgr = _decode_to_bgr(image_input)
+    is_arm = platform.machine().lower() in ("aarch64", "arm64", "armv7l", "armv6l")
+
+    if engine == "tesseract":
+        return _run_tesseract_lines(img_bgr)
+    if engine == "rapidocr":
+        return _run_rapidocr_lines(img_bgr)
+    if engine == "paddle":
+        return _run_paddle_lines_isolated(image_input) if is_arm else _run_paddle_lines_in_process(img_bgr)
+
+    # Auto mode:
+    # - On Raspberry Pi (ARM), prioritize native ARM-safe engines first to avoid PaddlePaddle SIGSEGV
+    if is_arm:
+        for runner in (_run_rapidocr_lines, _run_tesseract_lines):
+            lines = runner(img_bgr)
+            if lines:
+                return lines
+        return _run_paddle_lines_isolated(image_input)
+
+    # - On x86_64/AMD64 PC, run PaddleOCR with safe fallback
+    try:
+        lines = _run_paddle_lines_in_process(img_bgr)
+        if lines:
+            return lines
+    except Exception as exc:
+        logger.warning("PaddleOCR failed (%s), trying fallback OCR...", exc)
+
+    for runner in (_run_rapidocr_lines, _run_tesseract_lines):
+        lines = runner(img_bgr)
+        if lines:
+            return lines
+    return []
 
 
 def _strip_accents(s: str) -> str:

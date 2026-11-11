@@ -40,53 +40,68 @@ async def start_telegram_polling_safe(stop_event: asyncio.Event):
         return
 
     logger.info("🤖 Initializing Telegram Bot Application with token...")
+    application = None
     try:
-        application = Application.builder().token(token).build()
+        application = (
+            Application.builder()
+            .token(token)
+            .connect_timeout(15.0)
+            .read_timeout(20.0)
+            .write_timeout(20.0)
+            .pool_timeout(10.0)
+            .build()
+        )
         _global_application = application
+
+        async def _safe_reply(update: Update, text: str):
+            try:
+                await update.message.reply_markdown(text)
+            except Exception:
+                await update.message.reply_text(text)
 
         # Command Handlers
         async def tg_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
             arg = context.args[0] if context.args else ""
-            res = process_simulated_command(chat_id, f"/start {arg}".strip())
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, f"/start {arg}".strip())
+            await _safe_reply(update, res["response"])
 
         async def tg_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
             arg = context.args[0] if context.args else ""
-            res = process_simulated_command(chat_id, f"/link {arg}".strip())
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, f"/link {arg}".strip())
+            await _safe_reply(update, res["response"])
 
         async def tg_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
-            res = process_simulated_command(chat_id, "/unlink")
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, "/unlink")
+            await _safe_reply(update, res["response"])
 
         async def tg_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
-            res = process_simulated_command(chat_id, "/orders")
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, "/orders")
+            await _safe_reply(update, res["response"])
 
         async def tg_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
             arg = context.args[0] if context.args else ""
-            res = process_simulated_command(chat_id, f"/check {arg}".strip())
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, f"/check {arg}".strip())
+            await _safe_reply(update, res["response"])
 
         async def tg_lockers(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
-            res = process_simulated_command(chat_id, "/lockers")
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, "/lockers")
+            await _safe_reply(update, res["response"])
 
         async def tg_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
-            res = process_simulated_command(chat_id, "/profile")
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, "/profile")
+            await _safe_reply(update, res["response"])
 
         async def tg_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id = update.effective_chat.id
-            res = process_simulated_command(chat_id, "/help")
-            await update.message.reply_markdown(res["response"])
+            res = await asyncio.to_thread(process_simulated_command, chat_id, "/help")
+            await _safe_reply(update, res["response"])
 
         # Photo & Document Image Message Handler
         async def tg_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,7 +122,8 @@ async def start_telegram_polling_safe(stop_event: asyncio.Event):
                         filename = update.message.document.file_name or "document.jpg"
 
                 if photo_bytes:
-                    res = process_simulated_command(
+                    res = await asyncio.to_thread(
+                        process_simulated_command,
                         chat_id=chat_id,
                         text="",
                         photo_bytes=bytes(photo_bytes),
@@ -115,7 +131,7 @@ async def start_telegram_polling_safe(stop_event: asyncio.Event):
                         media_group_id=media_group_id,
                     )
                     if res.get("response") != "duplicate_album_ignored":
-                        await update.message.reply_markdown(res["response"])
+                        await _safe_reply(update, res["response"])
             except Exception as e:
                 logger.error("Failed to process image from Telegram: %s", e)
                 await update.message.reply_text("❌ Lỗi xử lý ảnh đơn hàng. Vui lòng thử lại.")

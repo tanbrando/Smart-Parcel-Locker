@@ -29,7 +29,8 @@ def setup_signal_handlers(fsm: LockerStateMachine):
     def handle_exit(sig, frame):
         logger.info("\nReceived exit signal (%s). Cleaning up hardware...", sig)
         try:
-            fsm.indicators.clear()
+            fsm.indicators.cleanup()
+            fsm.lock.cleanup()
             if not MOCK_HARDWARE:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()

@@ -8,13 +8,15 @@ requests>=2.31.0
 python-dotenv>=1.0.1
 
 # 2. Image Processing & 1D/2D Barcode / QR Decoding (pyzbar)
-# System dependencies on Raspberry Pi: libzbar0/libzbar0t64, python3-opencv, python3-picamera2
-opencv-python-headless>=4.8.0
+# System dependencies on Raspberry Pi: libzbar0/libzbar0t64, python3-opencv, python3-picamera2, tesseract-ocr
+opencv-python-headless>=4.8.0,<4.12
 Pillow>=10.0.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.4.0
 pyzbar>=0.1.9
 
 # 3. OCR Engine (Waybill Weight & Shopee/TikTok Screenshot Extraction)
+# pytesseract is the lightweight ARM-safe engine for Raspberry Pi alongside PaddleOCR
+pytesseract>=0.3.10
 paddlepaddle>=3.0.0
 paddleocr>=3.0.0
 

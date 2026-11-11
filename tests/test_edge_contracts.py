@@ -276,6 +276,25 @@ def test_edge_api_client_and_fsm_full_workflow():
         mock_api.handle_otp_submission.assert_called_once_with("654321")
 
 
+def test_ocr_isolated_resilience_and_off_mode():
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from edge.cv import ocr_utils
+
+    dummy_img = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    with patch.dict("os.environ", {"OCR_ENGINE": "off"}):
+        assert ocr_utils.run_ocr_lines(dummy_img) == []
+
+    # Simulate isolated PaddleOCR worker crashing with SIGSEGV (-11)
+    ocr_utils._PADDLE_CRASHED = False
+    mock_proc = MagicMock(returncode=-11, stdout="", stderr="Segmentation fault")
+    with patch("subprocess.run", return_value=mock_proc):
+        assert ocr_utils._run_paddle_lines_isolated(dummy_img) == []
+        assert ocr_utils._PADDLE_CRASHED is True
+    ocr_utils._PADDLE_CRASHED = False
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,

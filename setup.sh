@@ -54,9 +54,10 @@ echo "=========================================================="
 echo "📦 [1/5] Kiểm tra các gói hệ thống (APT)..."
 
 FIXED_PKGS=(
-    git curl python3-pip python3-venv python3-dev
+    git git-lfs curl python3-pip python3-venv python3-dev
     libzbar-dev python3-opencv
     libopenjp2-7 libjpeg-dev zlib1g-dev
+    tesseract-ocr tesseract-ocr-vie
     i2c-tools python3-smbus
 )
 
@@ -186,7 +187,7 @@ fi
 NEED_PIP=true
 if [ "$FORCE_PIP" = false ] && [ -f "$MARKER_FILE" ]; then
     SAVED_HASH="$(cat "$MARKER_FILE" 2>/dev/null || true)"
-    if [ "$SAVED_HASH" = "$CURRENT_HASH" ] && python -c "import fastapi, uvicorn, pydantic, cv2, pyzbar, smbus2, dotenv" >/dev/null 2>&1; then
+    if [ "$SAVED_HASH" = "$CURRENT_HASH" ] && python -c "import fastapi, uvicorn, pydantic, cv2, pyzbar, smbus2, dotenv, pytesseract" >/dev/null 2>&1; then
         NEED_PIP=false
     fi
 fi
@@ -225,10 +226,15 @@ else
 fi
 
 MODELS_DIR="$EDGE_DIR/models/paddlex"
+SAMPLE_PARAM="$MODELS_DIR/official_models/PP-OCRv5_mobile_det/inference.pdiparams"
+if [ -f "$SAMPLE_PARAM" ] && [ "$(wc -c < "$SAMPLE_PARAM")" -lt 1024 ] && command -v git-lfs >/dev/null 2>&1; then
+    echo "📥 Phát hiện file trọng số Git LFS dạng pointer, đang tải qua git lfs pull..."
+    (cd "$PROJECT_ROOT" && git lfs install >/dev/null 2>&1 && git lfs pull) || true
+fi
 if [ -d "$MODELS_DIR/official_models" ]; then
-    echo "✅ Trọng số PaddleOCR Offline đã sẵn sàng tại: $MODELS_DIR"
+    echo "✅ Trọng số OCR đã sẵn sàng tại: $MODELS_DIR (hỗ trợ Tesseract + fallback)"
 else
-    echo "⚠️ Chưa thấy trọng số trong $MODELS_DIR (sẽ tự tải ở lần chạy OCR đầu tiên)."
+    echo "ℹ️ Đã cấu hình Tesseract OCR làm engine mặc định trên Pi."
 fi
 
 chmod +x "$PROJECT_ROOT/setup.sh" 2>/dev/null || true
