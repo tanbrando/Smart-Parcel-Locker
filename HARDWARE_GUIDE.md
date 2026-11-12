@@ -55,17 +55,17 @@ Tài liệu chuẩn hóa toàn bộ sơ đồ đấu nối chân (Pinout) khớp
 
 ## ⌨️ 3. Bảng Ánh Xạ Phím Keypad 4x4 (`S1`–`S16`)
 
-Theo [`KEYPAD_MATRIX`](edge/core/keypad.py#L27-L32):
+Theo [`KEYPAD_MATRIX`](edge/core/keypad.py#L27-L34) *(đã bố trí 1–9 lên 9 ô đầu `S1`–`S9` và bỏ qua `S10` bị hỏng)*:
 
 | | `C1` (GPIO 12) | `C2` (GPIO 16) | `C3` (GPIO 20) | `C4` (GPIO 21) |
 | :--- | :---: | :---: | :---: | :---: |
-| **`R1` (GPIO 18)** | `S1` = **`1`** | `S2` = **`2`** | `S3` = **`3`** | `S4` = **`A`** |
-| **`R2` (GPIO 23)** | `S5` = **`4`** | `S6` = **`5`** | `S7` = **`6`** | `S8` = **`B`** |
-| **`R3` (GPIO 24)** | `S9` = **`7`** | `S10` = **`8`** | `S11` = **`9`** | `S12` = **`C`** |
-| **`R4` (GPIO 25)** | **`S13` = `*`** *(Quét gửi hàng)* | `S14` = **`0`** | **`S15` = `#`** *(Nhập OTP)* | `S16` = **`D`** |
+| **`R1` (GPIO 18)** | `S1` = **`1`** | `S2` = **`2`** | `S3` = **`3`** | `S4` = **`4`** |
+| **`R2` (GPIO 23)** | `S5` = **`5`** | `S6` = **`6`** | `S7` = **`7`** | `S8` = **`8`** |
+| **`R3` (GPIO 24)** | `S9` = **`9`** | `S10` = *(Hỏng - Bỏ)* | `S11` = **`0`** | `S12` = **`C`** |
+| **`R4` (GPIO 25)** | **`S13` = `*`** *(Quét gửi hàng)* | `S14` = **`0`** *(Dự phòng)* | **`S15` = `#`** *(Nhập OTP)* | `S16` = **`D`** |
 
-- Bấm **`*` (`S13`)**: Khởi động Camera quét mã vận đơn (luồng Shipper gửi hàng).
-- Bấm **`#` (`S15`)** (hoặc phím số): Chuyển sang nhập **6 chữ số OTP** rồi nhấn `#` để mở tủ lấy hàng.
+- Bấm **`*` (`S13`)**: Khởi động Camera quét mã vận đơn (luồng Shipper gửi hàng) hoặc xóa lùi khi đang nhập OTP.
+- Bấm **`#` (`S15`)**: Chuyển sang nhập **6 chữ số OTP** (`S1`–`S9`, `S11`/`S14`) để mở tủ lấy hàng.
 
 ---
 

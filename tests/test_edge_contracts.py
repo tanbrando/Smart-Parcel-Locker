@@ -333,6 +333,20 @@ def test_weight_validation_and_expected_weight_mapping():
     assert res_over.action == DepositAction.TRIGGER_BUZZER_ALARM
 
 
+def test_custom_keypad_matrix_layout():
+    from edge.core.keypad import KEYPAD_MATRIX
+
+    flat = [k for row in KEYPAD_MATRIX for k in row]
+    # S1-S9 map cleanly to digits 1-9
+    assert flat[:9] == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    # S10 (index 9) is disabled
+    assert flat[9] == ""
+    # Essential keys exist
+    assert "0" in flat
+    assert "*" in flat
+    assert "#" in flat
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,
