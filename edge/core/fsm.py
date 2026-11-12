@@ -14,7 +14,7 @@ from contracts.schemas import (
     SystemState,
     WeightMeasurement,
 )
-from edge.config import WEIGHT_TOLERANCE_GRAMS
+from edge.config import WEIGHT_TOLERANCE_GRAMS, STRICT_WEIGHT_MATCH
 from edge.cv.scanner import PackageScanner
 from edge.hardware.hx711_loadcell import LoadCellController
 from edge.hardware.lock_controller import LockController
@@ -29,8 +29,9 @@ def verify_deposit_integrity(
     auth,
     weight: WeightMeasurement,
     minimum_weight_grams: float = 20.0,
+    strict_expected_match: bool = STRICT_WEIGHT_MATCH,
 ) -> DepositDecision:
-    """Apply the edge-side anti-empty and stability checks before confirmation."""
+    """Apply edge-side parcel weight validation (anti-empty, overload, and optional strict match)."""
     if not weight.is_stable:
         return DepositDecision(
             status=DepositStatus.UNSTABLE_WEIGHT,
@@ -46,13 +47,27 @@ def verify_deposit_integrity(
             message="No parcel was detected in the locker.",
         )
 
-    expected = getattr(auth, "expected_weight", None)
-    tolerance = getattr(auth, "weight_tolerance", WEIGHT_TOLERANCE_GRAMS)
-    if expected and abs(measured - expected) > tolerance:
+    max_allowed = getattr(auth, "max_allowed_weight", None)
+    if max_allowed and measured > max_allowed:
         return DepositDecision(
             status=DepositStatus.WEIGHT_MISMATCH,
             action=DepositAction.TRIGGER_BUZZER_ALARM,
-            message=f"Weight mismatch: measured {measured:.1f}g, expected {expected:.1f}g.",
+            message=f"Overweight: {measured:.1f}g exceeds locker max {max_allowed:.1f}g.",
+        )
+
+    expected = getattr(auth, "expected_weight", None)
+    tolerance = getattr(auth, "weight_tolerance", WEIGHT_TOLERANCE_GRAMS)
+    if expected and abs(measured - expected) > tolerance:
+        if strict_expected_match:
+            return DepositDecision(
+                status=DepositStatus.WEIGHT_MISMATCH,
+                action=DepositAction.TRIGGER_BUZZER_ALARM,
+                message=f"Weight mismatch: measured {measured:.1f}g, expected {expected:.1f}g.",
+            )
+        logger.info(
+            "Weight deviation accepted (strict match disabled): measured %.1fg vs expected %.1fg",
+            measured,
+            expected,
         )
 
     return DepositDecision(
@@ -171,7 +186,7 @@ class LockerStateMachine:
 
         if confirm_res.success:
             self.indicators.success_sound()
-            self.indicators.display_message("Deposit Success!", f"Locker {locker_id} Locked")
+            self.indicators.display_message("Deposit Success!", f"Lock{locker_id} OK: {measured_int}g")
             logger.info("Deposit successfully completed for order #%s. OTP: %s", order_id, confirm_res.otp_generated)
         else:
             self.indicators.error_sound()

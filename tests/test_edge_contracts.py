@@ -295,6 +295,44 @@ def test_ocr_isolated_resilience_and_off_mode():
     ocr_utils._PADDLE_CRASHED = False
 
 
+def test_weight_validation_and_expected_weight_mapping():
+    from unittest.mock import patch
+    from edge.core.api_client import EdgeApiClient
+    from contracts.schemas import PackageVerificationResponse
+
+    # 1. Server sends max_allowed_weight=5000 (locker capacity) and declared_weight_grams=500 (order weight)
+    resp = PackageVerificationResponse(
+        action="UNLOCK_DOOR",
+        locker_number=1,
+        order_id=10,
+        max_allowed_weight=5000,
+        declared_weight_grams=500,
+    )
+    client = EdgeApiClient()
+    with patch.object(client, "verify_package", return_value=resp):
+        auth = client.request_door_unlock(ScanResult(tracking_number="SPX123", ocr_weight=500))
+    assert auth.expected_weight == 500.0
+    assert auth.max_allowed_weight == 5000.0
+
+    # 2. Relaxed mode: valid weight within [20g, 5000g] passes even if deviating from expected_weight
+    res_ok = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=250.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_ok.status == DepositStatus.SUCCESS
+    assert res_ok.action == DepositAction.CONFIRM_SERVER_AND_LOCK
+
+    # 3. Overweight > max_allowed_weight (5000g) still rejects
+    res_over = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=5500.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_over.status == DepositStatus.WEIGHT_MISMATCH
+    assert res_over.action == DepositAction.TRIGGER_BUZZER_ALARM
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,

@@ -73,6 +73,7 @@ HX711_DT_PIN: int = 5
 HX711_SCK_PIN: int = 6
 LOADCELL_CALIBRATION_FACTOR: float = 420.0  # Sensor-specific calibration scale
 WEIGHT_TOLERANCE_GRAMS: float = 150.0       # Max deviation between declared & measured
+STRICT_WEIGHT_MATCH: bool = os.getenv("STRICT_WEIGHT_MATCH", "false").lower() in ("true", "1", "yes")
 WEIGH_STABILIZATION_TIME_SEC: float = 3.0
 
 # 4x4 Matrix Keypad Pinout

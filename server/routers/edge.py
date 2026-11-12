@@ -124,6 +124,7 @@ def verify_package(req: PackageVerificationRequest, db: Session = Depends(get_db
         order_id=order.id,
         customer_name=order.user.full_name if order.user else "Khách hàng",
         max_allowed_weight=available_locker.max_weight,
+        declared_weight_grams=order.expected_weight,
         message=f"Mở ngăn số {available_locker.locker_number}",
     )
 
