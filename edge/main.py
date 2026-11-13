@@ -6,6 +6,12 @@ import sys
 import time
 import signal
 import logging
+from pathlib import Path
+
+# Ensure monorepo root is in sys.path so 'contracts' and 'edge' import cleanly
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from edge.config import MOCK_HARDWARE, SERVER_API_URL
 from edge.core.fsm import LockerStateMachine
@@ -23,7 +29,8 @@ def setup_signal_handlers(fsm: LockerStateMachine):
     def handle_exit(sig, frame):
         logger.info("\nReceived exit signal (%s). Cleaning up hardware...", sig)
         try:
-            fsm.indicators.clear()
+            fsm.indicators.cleanup()
+            fsm.lock.cleanup()
             if not MOCK_HARDWARE:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()

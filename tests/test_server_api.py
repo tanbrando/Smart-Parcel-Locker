@@ -316,6 +316,10 @@ def test_lockers_maintenance_and_logs(db_session):
     logs = lockers.get_access_logs(limit=10, db=db_session)
     assert isinstance(logs, list)
 
+    # Ensure /logs is registered BEFORE /{locker_number} so FastAPI doesn't return 422
+    route_paths = [r.path for r in lockers.router.routes]
+    assert route_paths.index("/lockers/logs") < route_paths.index("/lockers/{locker_number}")
+
 
 def test_screenshot_ocr_service_details():
     from server.services.ocr_service import ScreenshotOcrService

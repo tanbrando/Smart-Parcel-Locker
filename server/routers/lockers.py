@@ -20,6 +20,13 @@ def list_lockers(db: Session = Depends(get_db)):
     return db.query(Locker).order_by(Locker.locker_number.asc()).all()
 
 
+@router.get("/logs", response_model=List[AccessLogResponse])
+@router.get("/admin/logs", response_model=List[AccessLogResponse])
+def get_access_logs(limit: int = 50, db: Session = Depends(get_db)):
+    """Fetches recent security & access audit logs."""
+    return db.query(AccessLog).order_by(AccessLog.created_at.desc()).limit(limit).all()
+
+
 @router.get("/{locker_number}", response_model=LockerInfo)
 def get_locker(locker_number: int, db: Session = Depends(get_db)):
     """Retrieves specific locker status by locker number."""
@@ -46,10 +53,3 @@ def toggle_maintenance(locker_number: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(locker)
     return locker
-
-
-@router.get("/logs", response_model=List[AccessLogResponse])
-@router.get("/admin/logs", response_model=List[AccessLogResponse])
-def get_access_logs(limit: int = 50, db: Session = Depends(get_db)):
-    """Fetches recent security & access audit logs."""
-    return db.query(AccessLog).order_by(AccessLog.created_at.desc()).limit(limit).all()

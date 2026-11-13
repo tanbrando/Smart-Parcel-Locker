@@ -120,6 +120,7 @@ class LockerAuth(BaseModel):
     order_id: Optional[Union[int, str]] = None
     customer_name: Optional[str] = None
     expected_weight: Optional[float] = None
+    max_allowed_weight: Optional[float] = 5000.0
     weight_tolerance: float = 150.0
     reject_reason: Optional[str] = None
 

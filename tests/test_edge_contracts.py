@@ -276,6 +276,77 @@ def test_edge_api_client_and_fsm_full_workflow():
         mock_api.handle_otp_submission.assert_called_once_with("654321")
 
 
+def test_ocr_isolated_resilience_and_off_mode():
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from edge.cv import ocr_utils
+
+    dummy_img = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    with patch.dict("os.environ", {"OCR_ENGINE": "off"}):
+        assert ocr_utils.run_ocr_lines(dummy_img) == []
+
+    # Simulate isolated PaddleOCR worker crashing with SIGSEGV (-11)
+    ocr_utils._PADDLE_CRASHED = False
+    mock_proc = MagicMock(returncode=-11, stdout="", stderr="Segmentation fault")
+    with patch("subprocess.run", return_value=mock_proc):
+        assert ocr_utils._run_paddle_lines_isolated(dummy_img) == []
+        assert ocr_utils._PADDLE_CRASHED is True
+    ocr_utils._PADDLE_CRASHED = False
+
+
+def test_weight_validation_and_expected_weight_mapping():
+    from unittest.mock import patch
+    from edge.core.api_client import EdgeApiClient
+    from contracts.schemas import PackageVerificationResponse
+
+    # 1. Server sends max_allowed_weight=5000 (locker capacity) and declared_weight_grams=500 (order weight)
+    resp = PackageVerificationResponse(
+        action="UNLOCK_DOOR",
+        locker_number=1,
+        order_id=10,
+        max_allowed_weight=5000,
+        declared_weight_grams=500,
+    )
+    client = EdgeApiClient()
+    with patch.object(client, "verify_package", return_value=resp):
+        auth = client.request_door_unlock(ScanResult(tracking_number="SPX123", ocr_weight=500))
+    assert auth.expected_weight == 500.0
+    assert auth.max_allowed_weight == 5000.0
+
+    # 2. Relaxed mode: valid weight within [20g, 5000g] passes even if deviating from expected_weight
+    res_ok = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=250.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_ok.status == DepositStatus.SUCCESS
+    assert res_ok.action == DepositAction.CONFIRM_SERVER_AND_LOCK
+
+    # 3. Overweight > max_allowed_weight (5000g) still rejects
+    res_over = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=5500.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_over.status == DepositStatus.WEIGHT_MISMATCH
+    assert res_over.action == DepositAction.TRIGGER_BUZZER_ALARM
+
+
+def test_custom_keypad_matrix_layout():
+    from edge.core.keypad import KEYPAD_MATRIX
+
+    flat = [k for row in KEYPAD_MATRIX for k in row]
+    # S1-S9 map cleanly to digits 1-9
+    assert flat[:9] == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    # S10 (index 9) is disabled
+    assert flat[9] == ""
+    # Essential keys exist
+    assert "0" in flat
+    assert "*" in flat
+    assert "#" in flat
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,

@@ -92,13 +92,19 @@ class EdgeApiClient:
             order_code=scan_data.order_code,
         )
         is_allowed = bool(response.verified or response.action == "UNLOCK_DOOR")
-        exp_weight = float(response.declared_weight_grams or response.max_allowed_weight) if (response.declared_weight_grams or response.max_allowed_weight) else None
+        exp_weight = (
+            float(response.declared_weight_grams)
+            if response.declared_weight_grams is not None and response.declared_weight_grams > 0
+            else None
+        )
+        max_allowed = float(response.max_allowed_weight) if response.max_allowed_weight else 5000.0
         return LockerAuth(
             is_allowed=is_allowed,
             locker_id=response.locker_id or response.locker_number,
             order_id=response.order_id,
             customer_name=response.customer_name,
             expected_weight=exp_weight,
+            max_allowed_weight=max_allowed,
             weight_tolerance=response.tolerance_grams if hasattr(response, "tolerance_grams") else 150.0,
             reject_reason=response.reason if not is_allowed else None,
         )
