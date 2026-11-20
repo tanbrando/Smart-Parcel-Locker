@@ -23,7 +23,7 @@ window.PortalUploadTab = (() => {
       if (!fileInput.files || fileInput.files.length === 0) return;
       selectedFile = fileInput.files[0];
       if (fileNameEl) {
-        fileNameEl.textContent = `Đã chọn: ${selectedFile.name}`;
+        fileNameEl.textContent = selectedFile.name;
       }
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -38,7 +38,7 @@ window.PortalUploadTab = (() => {
 
     submitBtn.addEventListener("click", async () => {
       if (!selectedFile) {
-        window.SmartAuth.showToast("Vui lòng chọn hoặc chụp ảnh đơn hàng trước.", "error");
+        window.SmartAuth.showToast("Chưa chọn ảnh.", "error");
         return;
       }
 
@@ -50,7 +50,7 @@ window.PortalUploadTab = (() => {
       }
 
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `${icon("rotate-right")} Đang tải lên & nhận diện OCR...`;
+      submitBtn.innerHTML = `${icon("rotate-right")} Đang gửi...`;
 
       try {
         const res = await window.SmartApi.post("/orders/register-screenshot", formData);
@@ -58,20 +58,17 @@ window.PortalUploadTab = (() => {
         if (resultBox) {
           resultBox.style.display = "block";
           resultBox.innerHTML = `
-            <div style="background:var(--success-bg); color:var(--success); padding:16px; border-radius:14px; font-size:0.95rem; line-height:1.6;">
-              <b>${icon("circle-check")} Đăng ký đơn hàng thành công!</b><br>
-              • Mã vận đơn: <code>${info.tracking_number || "-"}</code><br>
-              • Người nhận: <b>${info.detected_recipient || user.full_name}</b><br>
-              • Trạng thái: <b>${info.status || "REGISTERED"}</b><br>
-              ${info.message || ""}
+            <div style="background:var(--success-bg); color:var(--success); padding:14px 16px; border-radius:14px; font-size:0.95rem; line-height:1.6; overflow-wrap:anywhere;">
+              <b>${icon("circle-check")} ${info.tracking_number || "Đã đăng ký"}</b><br>
+              ${icon("user")} ${info.detected_recipient || user.full_name}
             </div>
           `;
         }
-        window.SmartAuth.showToast("Đã gửi ảnh đơn hàng thành công!");
+        window.SmartAuth.showToast("Đã gửi ảnh.");
         selectedFile = null;
         fileInput.value = "";
         if (previewImg) previewImg.style.display = "none";
-        if (fileNameEl) fileNameEl.textContent = "Chạm để chọn ảnh hoặc chụp ảnh đơn hàng";
+        if (fileNameEl) fileNameEl.textContent = "Chọn hoặc chụp ảnh";
         if (typeof onOrderRegistered === "function") {
           onOrderRegistered();
         }
@@ -79,7 +76,7 @@ window.PortalUploadTab = (() => {
         window.SmartAuth.showToast(err.message || "Không thể gửi ảnh đơn hàng.", "error");
       } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = `${icon("cloud-arrow-up")} Gửi Ảnh Đăng Ký Đơn Hàng`;
+        submitBtn.innerHTML = `${icon("cloud-arrow-up")} Gửi ảnh`;
       }
     });
   }

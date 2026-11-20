@@ -29,20 +29,11 @@
           <div class="brand-name">SmartLocker</div>
         </div>
 
-        <div class="station-pill">
-          <div>
-            Cổng Người Dùng
-            <span>${user.phone}</span>
-          </div>
-          <span style="font-size:0.78rem; color:var(--text-muted); font-weight:700;">${isAdmin ? "ADMIN" : "USER"}</span>
-        </div>
-
-        <div class="nav-section-title">Chức Năng Chính</div>
         <nav class="sidebar-nav">
           <button type="button" class="nav-link ${activeTab === "orders" ? "active" : ""}" data-tab="orders">
             <span class="nav-link-content">
               <span class="nav-icon">${icon("box-open")}</span>
-              <span class="nav-label-full">Đơn Hàng Của Tôi</span>
+              <span class="nav-label-full">Đơn hàng</span>
               <span class="nav-label-short">Đơn hàng</span>
             </span>
           </button>
@@ -50,7 +41,7 @@
           <button type="button" class="nav-link ${activeTab === "upload" ? "active" : ""}" data-tab="upload">
             <span class="nav-link-content">
               <span class="nav-icon">${icon("camera")}</span>
-              <span class="nav-label-full">Gửi Ảnh Đơn Hàng</span>
+              <span class="nav-label-full">Gửi ảnh</span>
               <span class="nav-label-short">Gửi ảnh</span>
             </span>
           </button>
@@ -58,7 +49,7 @@
           <button type="button" class="nav-link ${activeTab === "faceid" ? "active" : ""}" data-tab="faceid">
             <span class="nav-link-content">
               <span class="nav-icon">${icon("id-card")}</span>
-              <span class="nav-label-full">Xác Thực Khuôn Mặt</span>
+              <span class="nav-label-full">Face ID</span>
               <span class="nav-label-short">Face ID</span>
             </span>
           </button>
@@ -66,7 +57,7 @@
           <button type="button" class="nav-link ${activeTab === "notifications" ? "active" : ""}" data-tab="notifications">
             <span class="nav-link-content">
               <span class="nav-icon">${icon("bell")}</span>
-              <span class="nav-label-full">Thông Báo & OTP</span>
+              <span class="nav-label-full">Thông báo</span>
               <span class="nav-label-short">Thông báo</span>
             </span>
             <span class="nav-notif-dot" id="navNotifBadge" style="display:none;">0</span>
@@ -75,11 +66,10 @@
           ${
             isAdmin
               ? `
-                <div class="nav-section-title" style="margin-top:14px;">Quản Trị</div>
                 <a href="/" class="nav-link desktop-only">
                   <span class="nav-link-content">
                     <span class="nav-icon">${icon("gear")}</span>
-                    <span class="nav-label-full">Bảng Quản Trị Admin</span>
+                    <span class="nav-label-full">Quản trị</span>
                   </span>
                 </a>
               `
@@ -93,7 +83,7 @@
               <div class="admin-avatar">${initials}</div>
               <div class="admin-info">
                 <b>${user.full_name}</b>
-                <span>ID #${user.id}</span>
+                <span>${user.phone || `#${user.id}`}</span>
               </div>
             </div>
             <button type="button" id="desktopLogoutBtn" title="Đăng xuất" style="border:none; background:transparent; cursor:pointer; font-size:0.95rem; font-weight:700; color:var(--danger); display:inline-flex; align-items:center; gap:4px;">

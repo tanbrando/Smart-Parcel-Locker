@@ -16,6 +16,11 @@ USE_MOCK=false
 USE_RELOAD=false
 HOST="0.0.0.0"
 PORT="8000"
+USE_HTTPS=false
+HTTPS_PORT="8443"
+CERT_DIR="$PROJECT_ROOT/certs"
+CERT_FILE="$CERT_DIR/dev-cert.pem"
+KEY_FILE="$CERT_DIR/dev-key.pem"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -39,6 +44,14 @@ while [ $# -gt 0 ]; do
             PORT="${2:-8000}"
             shift 2
             ;;
+        --https)
+            USE_HTTPS=true
+            shift
+            ;;
+        --https-port)
+            HTTPS_PORT="${2:-8443}"
+            shift 2
+            ;;
         -h|--help)
             cat << 'EOF'
 Cách dùng: ./run_all.sh [tùy chọn]
@@ -50,6 +63,9 @@ Tùy chọn:
   --edge-only    Chỉ chạy Edge Controller (khi Server đặt ở máy khác)
   --reload       Bật uvicorn --reload (dành cho phát triển code Server)
   --port <num>   Chỉ định cổng Server (mặc định: 8000)
+  --https        Mở thêm cổng HTTPS (chứng chỉ tự ký) để điện thoại/laptop
+                 dùng camera Face ID qua mạng LAN. Edge vẫn dùng HTTP.
+  --https-port <num>  Cổng HTTPS (mặc định: 8443)
   -h, --help     Hiển thị hướng dẫn này
 EOF
             exit 0
@@ -175,44 +191,85 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "server" ]; then
     fi
 fi
 
-# 1. Khởi chạy FastAPI Server
-if [ "$MODE" = "server" ]; then
-    if check_port_in_use "$PORT"; then
-        echo "❌ Cổng $PORT đang bị tiến trình khác chiếm dụng! Hãy tắt tiến trình cũ trước."
+# Sinh chứng chỉ tự ký (SAN gồm IP LAN + localhost) cho chế độ --https.
+# iOS yêu cầu chứng chỉ có subjectAltName, hạn <= 825 ngày và EKU serverAuth.
+ensure_dev_cert() {
+    local lan_ip="$1"
+    if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] \
+        && openssl x509 -in "$CERT_FILE" -noout -text 2>/dev/null | grep -qE "IP Address:${lan_ip}(,|$)"; then
+        return 0
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "❌ Cần cài openssl để dùng --https (sudo apt install openssl)."
         exit 1
     fi
-    UVICORN_ARGS=(server.main:app --host "$HOST" --port "$PORT")
+    mkdir -p "$CERT_DIR"
+    echo "🔐 Đang tạo chứng chỉ HTTPS tự ký cho ${lan_ip} ..."
+    MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 \
+        -subj "/CN=SmartLocker Dev" \
+        -addext "subjectAltName=IP:${lan_ip},IP:127.0.0.1,DNS:localhost" \
+        -addext "extendedKeyUsage=serverAuth" \
+        -keyout "$KEY_FILE" -out "$CERT_FILE" >/dev/null 2>&1
+}
+
+LAN_IP="$(get_lan_ip)"
+
+# Lệnh khởi chạy Server: uvicorn thường, hoặc launcher HTTP + HTTPS khi bật --https
+if [ "$USE_HTTPS" = true ]; then
+    ensure_dev_cert "$LAN_IP"
     if [ "$USE_RELOAD" = true ]; then
-        UVICORN_ARGS+=(--reload)
+        echo "⚠️ --reload không hỗ trợ cùng --https, bỏ qua --reload."
     fi
-    echo "🌐 Khởi chạy FastAPI Server tại http://$(get_lan_ip):${PORT} ..."
-    uvicorn "${UVICORN_ARGS[@]}"
+    SERVER_CMD=(python -m server.serve --host "$HOST" --port "$PORT"
+        --https-port "$HTTPS_PORT" --ssl-certfile "$CERT_FILE" --ssl-keyfile "$KEY_FILE")
+else
+    SERVER_CMD=(uvicorn server.main:app --host "$HOST" --port "$PORT")
+    if [ "$USE_RELOAD" = true ]; then
+        SERVER_CMD+=(--reload)
+    fi
+fi
+
+print_server_urls() {
+    echo "   • Web Dashboard : http://${LAN_IP}:${PORT}"
+    if [ "$USE_HTTPS" = true ]; then
+        echo "   • HTTPS (camera): https://${LAN_IP}:${HTTPS_PORT}/portal  (chấp nhận cảnh báo chứng chỉ lần đầu)"
+    fi
+}
+
+check_ports_free() {
+    if check_port_in_use "$PORT"; then
+        echo "❌ Cổng $PORT đang bị tiến trình khác chiếm dụng!"
+        echo "👉 Nếu Server cũ chưa tắt, hãy chạy: pkill -f 'server.main:app|server.serve' hoặc chọn --port khác."
+        exit 1
+    fi
+    if [ "$USE_HTTPS" = true ] && check_port_in_use "$HTTPS_PORT"; then
+        echo "❌ Cổng HTTPS $HTTPS_PORT đang bị chiếm dụng! Dùng --https-port để chọn cổng khác."
+        exit 1
+    fi
+}
+
+# 1. Khởi chạy FastAPI Server
+if [ "$MODE" = "server" ]; then
+    check_ports_free
+    echo "🌐 Khởi chạy FastAPI Server..."
+    print_server_urls
+    "${SERVER_CMD[@]}"
     exit 0
 fi
 
 if [ "$MODE" = "full" ]; then
     mkdir -p "$LOG_DIR"
-    if check_port_in_use "$PORT"; then
-        echo "❌ Cổng $PORT đang bị tiến trình khác chiếm dụng!"
-        echo "👉 Nếu Server cũ chưa tắt, hãy chạy: pkill -f 'uvicorn server.main:app' hoặc chọn --port khác."
-        exit 1
-    fi
-
-    UVICORN_ARGS=(server.main:app --host "$HOST" --port "$PORT")
-    if [ "$USE_RELOAD" = true ]; then
-        UVICORN_ARGS+=(--reload)
-    fi
+    check_ports_free
 
     echo "🌐 Đang khởi chạy FastAPI Server chạy nền (log: logs/server.log)..."
-    uvicorn "${UVICORN_ARGS[@]}" >"$SERVER_LOG" 2>&1 &
+    "${SERVER_CMD[@]}" >"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
 
     echo "⏳ Đang chờ Server sẵn sàng..."
     wait_for_server_health "$PORT"
 
-    LAN_IP="$(get_lan_ip)"
     echo "✅ Server đã ONLINE (PID: $SERVER_PID)"
-    echo "   • Web Dashboard : http://${LAN_IP}:${PORT}"
+    print_server_urls
     echo "   • Local Health  : http://127.0.0.1:${PORT}/health"
     echo "   • Server Logs   : tail -f logs/server.log"
     echo "----------------------------------------------------------"

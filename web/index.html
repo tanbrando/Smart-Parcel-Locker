@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>SmartLocker - Bảng Điều Khiển Trung Tâm</title>
+  <title>SmartLocker - Tổng quan</title>
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
@@ -14,132 +14,90 @@
 
     <!-- Main Workspace -->
     <main class="main-content">
-      <!-- Top Bar -->
       <div class="top-bar">
         <div class="page-title-block">
-          <h1>Xin chào, Quản trị viên</h1>
-          <p>Hệ thống giám sát và quản lý tủ giao nhận thông minh</p>
+          <h1>Tổng quan</h1>
         </div>
-
         <div class="top-bar-actions">
-          <input type="text" class="search-input-pill" placeholder="🔍 Tìm mã vận đơn, khách hàng...">
-          <button onclick="fetchAllData(); initDashboardPage();" class="action-pill-btn secondary">Làm Mới</button>
-          <a href="/orders" class="action-pill-btn">Xem Toàn Bộ Đơn Hàng ➔</a>
+          <button onclick="fetchAllData(); initDashboardPage();" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
         </div>
       </div>
 
-      <!-- Metrics Bento Strip -->
       <div class="metrics-strip">
         <div class="metric-card">
-          <div class="metric-label">Tổng Bưu Kiện Tiếp Nhận</div>
-          <div class="metric-value-row">
-            <span class="metric-value" id="kpiTotalOrders">0</span>
-            <span class="metric-sub">↗ 12%</span>
-          </div>
+          <div class="metric-label">Tổng bưu kiện</div>
+          <div class="metric-value-row"><span class="metric-value" id="kpiTotalOrders">0</span></div>
         </div>
-
         <div class="metric-card">
-          <div class="metric-label">Đang Chờ Shipper Giao</div>
-          <div class="metric-value-row">
-            <span class="metric-value" id="kpiPendingOrders">0</span>
-            <span class="metric-sub">Đơn mới</span>
-          </div>
+          <div class="metric-label">Chờ giao</div>
+          <div class="metric-value-row"><span class="metric-value" id="kpiPendingOrders">0</span></div>
         </div>
-
         <div class="metric-card">
-          <div class="metric-label">Đang Lưu Trong Tủ</div>
-          <div class="metric-value-row">
-            <span class="metric-value" id="kpiStoredOrders">0</span>
-            <span class="metric-sub">Chờ khách lấy</span>
-          </div>
+          <div class="metric-label">Trong tủ</div>
+          <div class="metric-value-row"><span class="metric-value" id="kpiStoredOrders">0</span></div>
         </div>
-
         <div class="metric-card">
-          <div class="metric-label">Đã Nhận Thành Công</div>
-          <div class="metric-value-row">
-            <span class="metric-value" id="kpiCollectedOrders">0</span>
-            <span class="metric-sub">Đã hoàn tất</span>
-          </div>
+          <div class="metric-label">Đã nhận</div>
+          <div class="metric-value-row"><span class="metric-value" id="kpiCollectedOrders">0</span></div>
         </div>
-
-        <!-- Highlight Yellow Card -->
         <div class="metric-card highlight">
-          <div class="metric-label">Tỷ Lệ Lấp Đầy Tủ</div>
+          <div class="metric-label">Lấp đầy tủ</div>
           <div class="metric-value-row">
-            <span class="metric-value" id="kpiOccupancyRate">0.0%</span>
-            <span class="metric-sub" id="kpiEmptyCount">3/3 trống</span>
+            <span class="metric-value" id="kpiOccupancyRate">0%</span>
+            <span class="metric-sub" id="kpiEmptyCount" title="Ngăn trống"></span>
           </div>
         </div>
       </div>
 
-      <!-- Pipeline Funnel Card -->
       <div class="bento-card">
         <div class="bento-header">
-          <div>
-            <div class="bento-title">Quy Trình Bưu Kiện (Parcel Pipeline)</div>
-            <div class="bento-subtitle">Theo dõi hành trình từ đăng ký ảnh đến khi khách lấy hàng an toàn</div>
-          </div>
-          <div style="display:flex; gap:6px;">
-            <span class="action-pill-btn secondary" style="font-size:0.75rem; padding:4px 12px;">30 Ngày Qua</span>
-          </div>
+          <div class="bento-title">Quy trình</div>
         </div>
-
         <div class="pipeline-grid">
           <div class="pipeline-stage">
-            <span class="stage-badge yellow">1. Đã Đăng Ký</span>
-            <div class="stage-track"><div class="stage-fill" id="funnelRegisteredFill" style="width: 40%;"></div></div>
+            <span class="stage-badge yellow"><span data-fa="cloud-arrow-up"></span> Đăng ký</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelRegisteredFill" style="width:0%;"></div></div>
             <div class="stage-value" id="funnelRegisteredCount">0</div>
-            <div class="stage-label">Bưu kiện đăng ký OCR</div>
           </div>
-
           <div class="pipeline-stage">
-            <span class="stage-badge">2. Shipper Quét Đơn</span>
-            <div class="stage-track"><div class="stage-fill" style="width: 60%;"></div></div>
+            <span class="stage-badge"><span data-fa="camera"></span> Quét đơn</span>
+            <div class="stage-track"><div class="stage-fill" style="width:100%;"></div></div>
             <div class="stage-value">100%</div>
-            <div class="stage-label">Camera Pi đọc mã vạch</div>
           </div>
-
           <div class="pipeline-stage">
-            <span class="stage-badge">3. Đã Bỏ Vào Tủ</span>
-            <div class="stage-track"><div class="stage-fill" id="funnelStoredFill" style="width: 30%;"></div></div>
+            <span class="stage-badge"><span data-fa="vault"></span> Trong tủ</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelStoredFill" style="width:0%;"></div></div>
             <div class="stage-value" id="funnelStoredCount">0</div>
-            <div class="stage-label">Cân tải trọng HX711</div>
           </div>
-
           <div class="pipeline-stage">
-            <span class="stage-badge dark">4. Đã Nhận Hàng</span>
-            <div class="stage-track"><div class="stage-fill" id="funnelCollectedFill" style="width: 80%;"></div></div>
+            <span class="stage-badge dark"><span data-fa="circle-check"></span> Đã nhận</span>
+            <div class="stage-track"><div class="stage-fill" id="funnelCollectedFill" style="width:0%;"></div></div>
             <div class="stage-value" id="funnelCollectedCount">0</div>
-            <div class="stage-label">Nhập OTP mở tủ</div>
           </div>
         </div>
       </div>
 
-      <!-- Lower Bento Grid (3 Columns) -->
       <div class="bento-lower-grid">
-        <!-- Col 1: Lockers State -->
         <div class="bento-card">
           <div class="bento-header">
-            <div class="bento-title">Trạng Thái Ngăn Tủ</div>
-            <a href="/lockers" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Chi tiết ➔</a>
+            <div class="bento-title">Ngăn tủ</div>
+            <a href="/lockers" class="icon-btn sm" title="Chi tiết" aria-label="Chi tiết ngăn tủ"><span data-fa="chevron-right"></span></a>
           </div>
           <div id="dashLockersList">Đang tải...</div>
         </div>
-
-        <!-- Col 2: Recent Orders & Anti-Fraud -->
         <div class="bento-card">
           <div class="bento-header">
-            <div class="bento-title">Bưu Kiện Gần Đây</div>
-            <a href="/orders" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Tất cả ➔</a>
+            <div class="bento-title">Bưu kiện gần đây</div>
+            <a href="/orders" class="icon-btn sm" title="Tất cả" aria-label="Tất cả đơn hàng"><span data-fa="chevron-right"></span></a>
           </div>
           <div id="dashRecentOrdersList">Đang tải...</div>
         </div>
-
-        <!-- Col 3: Real-time Access Logs -->
         <div class="bento-card">
           <div class="bento-header">
-            <div class="bento-title">Nhật Ký Sự Kiện</div>
-            <a href="/logs" style="font-size:0.75rem; color:var(--text-muted); text-decoration:none; font-weight:700;">Lịch sử ➔</a>
+            <div class="bento-title">Nhật ký</div>
+            <a href="/logs" class="icon-btn sm" title="Lịch sử" aria-label="Lịch sử nhật ký"><span data-fa="chevron-right"></span></a>
           </div>
           <div id="dashRecentLogsList">Đang tải...</div>
         </div>

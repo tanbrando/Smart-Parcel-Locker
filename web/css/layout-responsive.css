@@ -118,13 +118,14 @@
 /* Responsive Admin Grids */
 .responsive-two-col {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
 
 @media (max-width: 1080px) {
   .responsive-two-col {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sidebar {
     width: 245px;
@@ -227,12 +228,12 @@
   .sidebar .nav-link {
     flex: 1 1 0 !important;
     width: auto !important;
-    min-width: 66px;
+    min-width: 0;
     flex-direction: column !important;
     justify-content: center !important;
     align-items: center !important;
     gap: 4px !important;
-    padding: 9px 6px !important;
+    padding: 9px 2px !important;
     border-radius: 15px !important;
     position: relative;
     text-align: center !important;
@@ -243,6 +244,8 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .nav-icon {
@@ -257,10 +260,13 @@
 
   .nav-label-short {
     display: block;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-weight: 700;
     line-height: 1.15;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .nav-badge {
@@ -279,22 +285,21 @@
 
   /* Responsive Top Bar & Controls */
   .top-bar {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-wrap: nowrap;
     gap: 10px;
   }
 
   .page-title-block h1 {
-    font-size: 1.48rem;
+    font-size: 1.4rem;
   }
 
-  .top-bar-actions {
-    width: 100%;
-    flex-wrap: wrap;
+  .top-bar-actions .search-pill {
+    flex: 1 1 200px;
+    min-width: 0;
   }
 
   .search-input-pill {
-    width: 100% !important;
+    width: 100%;
   }
 
   .metrics-strip {

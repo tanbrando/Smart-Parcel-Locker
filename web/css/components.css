@@ -2,6 +2,61 @@
    Reusable UI Components: Cards, OTP Box, Switch, Toast, Filter Pills
    ========================================================================== */
 
+/* Icon-only Button (always pair with title + aria-label) */
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-dark);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1rem;
+  flex-shrink: 0;
+  text-decoration: none;
+  box-shadow: var(--shadow-soft);
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  font-family: inherit;
+}
+
+.icon-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.icon-btn:active {
+  transform: scale(0.95);
+}
+
+.icon-btn.dark {
+  background: var(--dark-pill);
+  color: var(--accent-yellow);
+  border-color: transparent;
+}
+
+.icon-btn.danger {
+  color: var(--danger);
+}
+
+.icon-btn.sm {
+  width: 32px;
+  height: 32px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+
+.icon-btn.is-on {
+  background: var(--accent-yellow);
+  color: var(--dark-pill);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Filter Pills */
 .filter-pills-row {
   display: flex;
@@ -31,7 +86,7 @@
 /* Order Card (Mobile-friendly list item) */
 .order-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 14px;
 }
 
@@ -44,6 +99,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .order-card.is-stored {
@@ -104,14 +160,14 @@
   color: var(--dark-pill);
   border: none;
   border-radius: var(--radius-pill);
-  padding: 9px 16px;
-  font-size: 0.9rem;
-  font-weight: 800;
+  width: 42px;
+  height: 42px;
+  font-size: 1rem;
   cursor: pointer;
-  white-space: nowrap;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
 }
 
 .otp-copy-btn:active {
@@ -251,4 +307,11 @@
   color: var(--text-muted);
   font-size: 0.98rem;
   line-height: 1.55;
+}
+
+.empty-state-box .fa-svg-icon {
+  display: block;
+  margin: 0 auto 8px;
+  font-size: 1.8rem;
+  opacity: 0.6;
 }

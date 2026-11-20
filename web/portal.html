@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Responsive Navigation: Left Sidebar on Desktop/Laptop, Horizontal Bottom Menu on Mobile -->
+    <!-- Left sidebar on desktop, fixed bottom menu on mobile -->
     <div id="sidebarContainer"></div>
 
     <main class="main-content">
@@ -21,8 +21,8 @@
             <div id="mobilePortalUserName" style="font-size:0.84rem; color:var(--text-muted);">Khách hàng</div>
           </div>
         </div>
-        <button type="button" id="mobileLogoutBtn" class="mobile-logout-btn">
-          <span data-fa="right-from-bracket"></span> Đăng xuất
+        <button type="button" id="mobileLogoutBtn" class="icon-btn danger" title="Đăng xuất" aria-label="Đăng xuất">
+          <span data-fa="right-from-bracket"></span>
         </button>
       </div>
 
@@ -30,68 +30,49 @@
       <div class="top-bar">
         <div class="page-title-block">
           <h1>Xin chào, <span id="portalUserName">Khách hàng</span></h1>
-          <p>Theo dõi bưu kiện, nhận mã OTP và quản lý xác thực khuôn mặt</p>
         </div>
         <div class="top-bar-actions">
-          <button type="button" id="portalRefreshBtn" class="action-pill-btn secondary">
-            <span data-fa="rotate-right"></span> Làm Mới
+          <button type="button" id="portalRefreshBtn" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
           </button>
         </div>
       </div>
 
-      <!-- TAB 1: ORDERS TRACKING -->
+      <!-- TAB 1: ORDERS -->
       <section id="tab-orders" class="portal-tab-panel active">
         <div class="metrics-strip">
           <div class="metric-card">
-            <div class="metric-label">Tổng Đơn Hàng</div>
-            <div class="metric-value-row">
-              <span class="metric-value" id="userKpiTotal">0</span>
-              <span class="metric-sub">Tất cả</span>
-            </div>
+            <div class="metric-label">Tổng đơn</div>
+            <div class="metric-value-row"><span class="metric-value" id="userKpiTotal">0</span></div>
           </div>
-
           <div class="metric-card highlight">
-            <div class="metric-label">Đã Giao Trong Tủ</div>
-            <div class="metric-value-row">
-              <span class="metric-value" id="userKpiStored">0</span>
-              <span class="metric-sub">Có mã OTP</span>
-            </div>
+            <div class="metric-label">Trong tủ</div>
+            <div class="metric-value-row"><span class="metric-value" id="userKpiStored">0</span></div>
           </div>
-
           <div class="metric-card">
-            <div class="metric-label">Đang Chờ Giao</div>
-            <div class="metric-value-row">
-              <span class="metric-value" id="userKpiPending">0</span>
-              <span class="metric-sub">Đã đăng ký</span>
-            </div>
+            <div class="metric-label">Chờ giao</div>
+            <div class="metric-value-row"><span class="metric-value" id="userKpiPending">0</span></div>
           </div>
-
           <div class="metric-card">
-            <div class="metric-label">Đã Nhận Thành Công</div>
-            <div class="metric-value-row">
-              <span class="metric-value" id="userKpiCollected">0</span>
-              <span class="metric-sub">Hoàn tất</span>
-            </div>
+            <div class="metric-label">Đã nhận</div>
+            <div class="metric-value-row"><span class="metric-value" id="userKpiCollected">0</span></div>
           </div>
         </div>
 
         <div class="bento-card">
           <div class="bento-header" style="margin-bottom:14px;">
-            <div>
-              <div class="bento-title">Tình Trạng Đơn Hàng</div>
-              <div class="bento-subtitle">Các đơn của bạn giao vào cùng 1 ngăn tủ sẽ dùng chung 1 mã OTP</div>
-            </div>
+            <div class="bento-title">Đơn hàng</div>
           </div>
 
           <div id="portalOrdersFilters" class="filter-pills-row">
             <button type="button" class="filter-pill active" data-filter="ALL">Tất cả</button>
-            <button type="button" class="filter-pill" data-filter="STORED">Đã giao (Có OTP)</button>
+            <button type="button" class="filter-pill" data-filter="STORED">Trong tủ</button>
             <button type="button" class="filter-pill" data-filter="REGISTERED">Chờ giao</button>
             <button type="button" class="filter-pill" data-filter="COLLECTED">Đã nhận</button>
           </div>
 
           <div id="portalOrdersList" class="order-cards-grid">
-            <div class="empty-state-box">Đang tải danh sách đơn hàng...</div>
+            <div class="empty-state-box">Đang tải...</div>
           </div>
         </div>
       </section>
@@ -99,131 +80,85 @@
       <!-- TAB 2: UPLOAD ORDER SCREENSHOT -->
       <section id="tab-upload" class="portal-tab-panel">
         <div class="form-card">
-          <div class="bento-title" style="margin-bottom:4px;">Gửi Ảnh Đơn Hàng (OCR)</div>
-          <p class="bento-subtitle" style="margin-bottom:18px;">
-            Tải lên ảnh chụp màn hình đơn hàng (Shopee / Lazada / TikTok Shop) để tủ tự nhận diện khi Shipper giao đến.
-          </p>
+          <div class="bento-title" style="margin-bottom:14px;">Gửi ảnh đơn hàng</div>
 
           <div id="orderUploadDropzone" class="upload-dropzone">
-            <div style="font-size:2.4rem; margin-bottom:10px; color:var(--text-dark);" data-fa="cloud-arrow-up"></div>
-            <div id="orderSelectedFileName" style="font-weight:700; font-size:1.02rem; color:var(--text-dark);">
-              Chạm để chọn ảnh hoặc chụp ảnh đơn hàng
+            <div style="font-size:2.4rem; margin-bottom:8px; color:var(--text-dark);" data-fa="cloud-arrow-up"></div>
+            <div id="orderSelectedFileName" style="font-weight:700; font-size:1rem; color:var(--text-dark); overflow-wrap:anywhere;">
+              Chọn hoặc chụp ảnh
             </div>
-            <div style="font-size:0.88rem; color:var(--text-muted); margin-top:4px;">
-              Hỗ trợ JPG, PNG • Tự động tách mã vận đơn
-            </div>
-            <img id="orderPreviewImg" class="upload-preview-img" alt="Xem trước ảnh đơn hàng">
+            <img id="orderPreviewImg" class="upload-preview-img" alt="Ảnh đơn hàng">
             <input type="file" id="orderImageInput" accept="image/*" style="display:none;">
           </div>
 
-          <div class="form-group" style="margin-top:18px;">
-            <label for="orderExpectedWeight">Khối lượng dự kiến (gram - không bắt buộc)</label>
-            <input
-              type="number"
-              id="orderExpectedWeight"
-              class="form-control"
-              placeholder="Ví dụ: 500 (để trống nếu muốn hệ thống tự ước lượng)"
-              min="50"
-              max="5000"
-            >
+          <div class="form-group" style="margin-top:16px;">
+            <label for="orderExpectedWeight"><span data-fa="weight-hanging"></span> Khối lượng (g)</label>
+            <input type="number" id="orderExpectedWeight" class="form-control" placeholder="Không bắt buộc" min="50" max="5000">
           </div>
 
-          <button
-            type="button"
-            id="orderUploadSubmitBtn"
-            class="action-pill-btn"
-            style="width:100%; justify-content:center; padding:13px 22px;"
-          >
-            <span data-fa="cloud-arrow-up"></span> Gửi Ảnh Đăng Ký Đơn Hàng
+          <button type="button" id="orderUploadSubmitBtn" class="action-pill-btn block" style="padding:13px 22px;">
+            <span data-fa="cloud-arrow-up"></span> Gửi ảnh
           </button>
 
           <div id="orderUploadResult" style="display:none; margin-top:14px;"></div>
         </div>
       </section>
 
-      <!-- TAB 3: INTERACTIVE MULTI-ANGLE FACE ID -->
+      <!-- TAB 3: FACE ID -->
       <section id="tab-faceid" class="portal-tab-panel">
         <div class="bento-card">
-          <div class="face-status-banner">
-            <div>
-              <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
-                <span class="bento-title">Xác Thực Khuôn Mặt (Face ID)</span>
-                <span id="faceStatusBadge" class="pill-badge REGISTERED">CHƯA ĐĂNG KÝ</span>
-              </div>
-              <div id="faceStatusDesc" class="bento-subtitle">
-                Căn chỉnh và chụp đủ 5 góc độ khuôn mặt để kích hoạt tính năng mở tủ nhanh.
-              </div>
+          <div class="face-header">
+            <div class="face-header-title">
+              <span class="bento-title">Face ID</span>
+              <span id="faceStatusBadge" class="pill-badge REGISTERED">Chưa đăng ký</span>
             </div>
-            <label class="toggle-switch" title="Bật / Tắt xác thực khuôn mặt">
-              <input type="checkbox" id="faceAuthToggleInput">
+            <label class="toggle-switch" title="Bật / tắt Face ID">
+              <input type="checkbox" id="faceAuthToggleInput" aria-label="Bật / tắt Face ID">
               <span class="toggle-slider"></span>
             </label>
           </div>
 
-          <div style="margin-top:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <div style="font-weight:800; font-size:1.05rem;">Đăng Ký Khuôn Mặt Đa Góc Độ (5 Góc)</div>
-              <div id="faceProgressText" style="font-size:0.92rem; font-weight:700; color:var(--text-muted);">
-                Tiến độ: 0/5 góc đã chụp
-              </div>
-            </div>
-
-            <!-- Detailed per-angle pose instruction banner -->
-            <div class="face-angle-guide-banner">
-              <div id="faceGuideIcon" class="face-guide-icon"></div>
-              <div class="face-guide-text">
-                <b id="faceGuideTitle">Góc 1/5: Chính diện (0°)</b>
-                <span id="faceGuideDesc">Giữ đầu thẳng, đặt 2 mắt ngang đường kẻ mắt và mũi nằm ngay vòng tròn tâm ở giữa khung.</span>
-              </div>
-            </div>
-
-            <!-- Camera Stage + 3D SVG Alignment HUD -->
-            <div class="face-camera-stage">
+          <div class="face-studio">
+            <div id="faceCameraStage" class="face-camera-stage">
               <video id="faceCameraVideo" autoplay playsinline muted></video>
               <svg id="faceHudSvg" class="face-hud-svg" viewBox="0 0 400 300" preserveAspectRatio="none"></svg>
-              <div id="faceCountdownBadge" class="face-countdown-overlay">Giữ nguyên... 3</div>
-              <div id="facePromptPill" class="face-prompt-pill">Bước 1/5: Nhìn thẳng • Đặt mũi vào tâm vòng tròn</div>
-            </div>
-            <canvas id="faceCaptureCanvas" style="display:none;"></canvas>
-            <canvas id="faceAnalysisCanvas" style="display:none;"></canvas>
 
-            <!-- Real-time 3-indicator quality telemetry -->
-            <div class="face-telemetry-bar">
-              <div id="telLight" class="telemetry-pill"><span data-fa="sun"></span> Chờ bật Camera</div>
-              <div id="telFrame" class="telemetry-pill"><span data-fa="crosshairs"></span> Chưa căn khung</div>
-              <div id="telStable" class="telemetry-pill"><span data-fa="circle-check"></span> Chưa ổn định</div>
-            </div>
+              <div class="face-telemetry">
+                <span id="telLight" class="tel-dot" title="Ánh sáng"><span data-fa="sun"></span></span>
+                <span id="telFrame" class="tel-dot" title="Căn khung"><span data-fa="crosshairs"></span></span>
+                <span id="telStable" class="tel-dot" title="Giữ yên"><span data-fa="hand"></span></span>
+              </div>
+              <div id="faceCountdownBadge" class="face-countdown-overlay">3</div>
+              <div id="facePromptPill" class="face-prompt-pill"></div>
 
-            <!-- Auto-capture toggle -->
-            <label class="face-auto-capture-row">
-              <input type="checkbox" id="faceAutoCaptureToggle" checked style="width:18px; height:18px; accent-color:var(--dark-pill);">
-              <span>Tự động đếm ngược &amp; chụp khi mặt khớp khung ổn định</span>
-            </label>
-
-            <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin:16px 0;">
-              <button type="button" id="faceStartCameraBtn" class="action-pill-btn secondary">
-                <span data-fa="video"></span> Bật Camera
-              </button>
-              <button type="button" id="faceCaptureAngleBtn" class="action-pill-btn">
-                <span data-fa="camera"></span> Chụp Góc Này
-              </button>
-              <button type="button" id="faceResetAnglesBtn" class="action-pill-btn secondary">
-                <span data-fa="rotate-left"></span> Chụp Lại
+              <button type="button" id="faceStartCameraBtn" class="face-start-overlay" title="Bật camera" aria-label="Bật camera">
+                <span data-fa="camera"></span>
               </button>
             </div>
 
             <div id="faceAngleStepsGrid" class="angle-steps-grid"></div>
 
-            <button
-              type="button"
-              id="faceSaveEnrollBtn"
-              class="action-pill-btn"
-              style="width:100%; justify-content:center; margin-top:18px; padding:13px 22px;"
-              disabled
-            >
-              <span data-fa="circle-check"></span> Lưu &amp; Kích Hoạt Face ID
+            <div class="face-controls">
+              <button type="button" id="faceResetAnglesBtn" class="icon-btn" title="Chụp lại từ đầu" aria-label="Chụp lại từ đầu">
+                <span data-fa="rotate-left"></span>
+              </button>
+              <button type="button" id="faceCaptureAngleBtn" class="shutter-btn" title="Chụp góc này" aria-label="Chụp góc này">
+                <span data-fa="camera"></span>
+              </button>
+              <button type="button" id="faceAutoCaptureBtn" class="icon-btn is-on" title="Tự động chụp: bật" aria-label="Tự động chụp" aria-pressed="true">
+                <span data-fa="bolt"></span>
+              </button>
+            </div>
+
+            <button type="button" id="faceSaveEnrollBtn" class="action-pill-btn block" style="padding:13px 22px;" hidden>
+              <span data-fa="circle-check"></span> Lưu Face ID
             </button>
           </div>
+
+          <!-- Native camera fallback (works on iOS/Android without HTTPS) -->
+          <input type="file" id="faceNativeCaptureInput" accept="image/*" capture="user" hidden>
+          <canvas id="faceCaptureCanvas" hidden></canvas>
+          <canvas id="faceAnalysisCanvas" hidden></canvas>
         </div>
       </section>
 
@@ -231,21 +166,16 @@
       <section id="tab-notifications" class="portal-tab-panel">
         <div class="bento-card">
           <div class="bento-header" style="margin-bottom:14px;">
-            <div>
-              <div class="bento-title">Thông Báo Giao Hàng &amp; Mã OTP</div>
-              <div class="bento-subtitle">Tự động cập nhật khi có kiện hàng được giao vào ngăn tủ</div>
-            </div>
+            <div class="bento-title">Thông báo &amp; OTP</div>
           </div>
-
           <div id="portalNotificationsList" style="display:flex; flex-direction:column; gap:12px;">
-            <div class="empty-state-box">Đang tải thông báo...</div>
+            <div class="empty-state-box">Đang tải...</div>
           </div>
         </div>
       </section>
     </main>
   </div>
 
-  <!-- Modular JS Scripts -->
   <script src="/static/js/core/icons.js"></script>
   <script src="/static/js/core/api.js"></script>
   <script src="/static/js/core/auth-session.js"></script>

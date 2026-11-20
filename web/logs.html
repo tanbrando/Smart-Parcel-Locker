@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>SmartLocker - Nhật Ký Kiểm Toán & Sự Kiện</title>
+  <title>SmartLocker - Nhật ký</title>
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
@@ -14,12 +14,12 @@
     <main class="main-content">
       <div class="top-bar">
         <div class="page-title-block">
-          <h1>Nhật Ký Kiểm Toán</h1>
-          <p>Lịch sử ghi nhận toàn bộ hoạt động quét mã, mở tủ, sai OTP và cảnh báo</p>
+          <h1>Nhật ký</h1>
         </div>
-
         <div class="top-bar-actions">
-          <button onclick="initLogsPage()" class="action-pill-btn secondary">Tải Lại Nhật Ký</button>
+          <button onclick="initLogsPage()" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
         </div>
       </div>
 
@@ -28,15 +28,15 @@
           <table id="logsTable">
             <thead>
               <tr>
-                <th>Thời Gian</th>
-                <th>Sự Kiện</th>
-                <th>Vị Trí Tủ</th>
-                <th>Mã Đơn Hàng</th>
-                <th>Chi Tiết Kỹ Thuật</th>
+                <th>Thời gian</th>
+                <th>Sự kiện</th>
+                <th>Ngăn</th>
+                <th>Đơn</th>
+                <th>Chi tiết</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
+              <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải...</td></tr>
             </tbody>
           </table>
         </div>

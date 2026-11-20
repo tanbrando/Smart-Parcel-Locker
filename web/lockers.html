@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>SmartLocker - Quản Lý Ngăn Tủ Vật Lý</title>
+  <title>SmartLocker - Ngăn tủ</title>
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
@@ -14,18 +14,17 @@
     <main class="main-content">
       <div class="top-bar">
         <div class="page-title-block">
-          <h1>Ngăn Tủ Thông Minh</h1>
-          <p>Giám sát tải trọng cảm biến HX711 và trạng thái khóa điện tử Solenoid</p>
+          <h1>Ngăn tủ</h1>
         </div>
-
         <div class="top-bar-actions">
-          <button onclick="initLockersPage()" class="action-pill-btn secondary">Làm Mới Tình Trạng</button>
+          <button onclick="initLockersPage()" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
         </div>
       </div>
 
-      <!-- Lockers Cards Grid -->
-      <div id="lockersFullGrid" class="pipeline-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
-        <div style="color:var(--text-muted); padding:20px;">Đang tải danh sách ngăn tủ...</div>
+      <div id="lockersFullGrid" class="card-grid">
+        <div style="color:var(--text-muted); padding:20px;">Đang tải...</div>
       </div>
     </main>
   </div>

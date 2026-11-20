@@ -39,10 +39,7 @@ window.PortalNotificationsTab = (() => {
 
     if (!notifications || notifications.length === 0) {
       listEl.innerHTML = `
-        <div class="empty-state-box">
-          Chưa có thông báo giao hàng nào.<br>
-          Khi Shipper bỏ đơn vào tủ, thông báo kèm mã OTP sẽ xuất hiện tại đây.
-        </div>
+        <div class="empty-state-box">${icon("bell")}Chưa có thông báo</div>
       `;
       return;
     }
@@ -57,7 +54,7 @@ window.PortalNotificationsTab = (() => {
         return `
           <div class="notif-card ${isStored ? "unread" : ""}">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-              <span class="pill-badge ${n.status}">${isStored ? "ĐÃ GIAO - CHỜ LẤY" : "ĐÃ NHẬN HÀNG"}</span>
+              <span class="pill-badge ${n.status}">${isStored ? "Chờ lấy" : "Đã nhận"}</span>
               <span style="font-size:0.84rem; color:var(--text-muted);">${timeStr}</span>
             </div>
             <div style="font-size:0.98rem; font-weight:600; color:var(--text-dark); line-height:1.5;">
@@ -68,10 +65,10 @@ window.PortalNotificationsTab = (() => {
                 ? `
                   <div class="otp-highlight-box">
                     <div>
-                      <div style="font-size:0.78rem; opacity:0.85;">NGĂN #${n.locker_number || "-"} • MÃ OTP MỞ TỦ</div>
+                      <div style="font-size:0.78rem; opacity:0.85;">${icon("vault")} Ngăn #${n.locker_number || "-"}</div>
                       <div class="otp-code-display">${n.otp_code}</div>
                     </div>
-                    <button class="otp-copy-btn" data-notif-otp="${n.otp_code}">${icon("copy")} Sao chép</button>
+                    <button class="otp-copy-btn" data-notif-otp="${n.otp_code}" title="Sao chép" aria-label="Sao chép OTP">${icon("copy")}</button>
                   </div>
                 `
                 : ""

@@ -1,79 +1,27 @@
 /**
- * User Portal - Interactive Multi-Angle Face ID Tab Module
- * Provides a 5-angle 3D Pose Alignment SVG HUD, live camera quality telemetry
- * (brightness, framing, stability), and optional auto-capture countdown.
+ * User Portal - Multi-Angle Face ID Tab Module
+ * 5-angle pose HUD over a live camera preview with icon-only quality telemetry
+ * (light / framing / stability) and optional auto-capture.
+ *
+ * Live preview needs a secure context (HTTPS or localhost). When it is not
+ * available (e.g. iPhone over http://<LAN-IP>), capture falls back to the
+ * device's native camera via <input type="file" capture="user">.
  */
 window.PortalFaceIdTab = (() => {
   const icon = (name) => (typeof window.faIcon === "function" ? window.faIcon(name) : "");
+  const toast = (msg, type, ms) => window.SmartAuth.showToast(msg, type, ms);
 
-  // Detailed 5-angle alignment specs with target nose coordinates (in 400x300 HUD viewBox)
+  // Target nose coordinates are in the 400x300 HUD viewBox
   const ANGLES = [
-    {
-      key: "front",
-      label: "Chính diện",
-      faIcon: "face-smile",
-      shortPrompt: "Nhìn thẳng • Đặt mũi vào tâm vòng tròn",
-      detailTitle: "Góc 1/5: Chính diện (0°)",
-      detailInstruction:
-        "Giữ đầu thẳng, đặt 2 mắt ngang đường kẻ mắt và mũi nằm ngay vòng tròn tâm ở giữa khung.",
-      targetX: 200,
-      targetY: 155,
-      eyeLineY: 126,
-      noseCurve: "M 200 62 L 200 242",
-    },
-    {
-      key: "left",
-      label: "Quay trái",
-      faIcon: "arrow-left",
-      shortPrompt: "Quay mặt sang TRÁI (~30°) chạm tâm đỏ/vàng",
-      detailTitle: "Góc 2/5: Quay trái (-30°)",
-      detailInstruction:
-        "Xoay nhẹ đầu sang trái khoảng 30° sao cho đầu mũi hướng về vòng tròn đích bên TRÁI, mắt vẫn nhìn vào khung.",
-      targetX: 148,
-      targetY: 155,
-      eyeLineY: 126,
-      noseCurve: "M 185 62 Q 138 152 185 242",
-    },
-    {
-      key: "right",
-      label: "Quay phải",
-      faIcon: "arrow-right",
-      shortPrompt: "Quay mặt sang PHẢI (~30°) chạm tâm đích",
-      detailTitle: "Góc 3/5: Quay phải (+30°)",
-      detailInstruction:
-        "Xoay nhẹ đầu sang phải khoảng 30° sao cho đầu mũi hướng về vòng tròn đích bên PHẢI, giữ mặt trong khung bầu dục.",
-      targetX: 252,
-      targetY: 155,
-      eyeLineY: 126,
-      noseCurve: "M 215 62 Q 262 152 215 242",
-    },
-    {
-      key: "up",
-      label: "Ngẩng lên",
-      faIcon: "arrow-up",
-      shortPrompt: "Ngẩng nhẹ cằm LÊN TRÊN (~20°)",
-      detailTitle: "Góc 4/5: Ngẩng lên (+20°)",
-      detailInstruction:
-        "Nâng nhẹ cằm lên khoảng 20° sao cho tầm mắt khớp với đường kẻ ngang phía TRÊN và mũi chạm điểm đích trên.",
-      targetX: 200,
-      targetY: 118,
-      eyeLineY: 96,
-      noseCurve: "M 200 58 L 200 236",
-    },
-    {
-      key: "down",
-      label: "Cúi xuống",
-      faIcon: "arrow-down",
-      shortPrompt: "Cúi nhẹ cằm XUỐNG DƯỚI (~20°)",
-      detailTitle: "Góc 5/5: Cúi xuống (-20°)",
-      detailInstruction:
-        "Hạ nhẹ cằm xuống khoảng 20° sao cho mắt khớp đường kẻ ngang phía DƯỚI và đầu mũi chạm điểm đích dưới.",
-      targetX: 200,
-      targetY: 190,
-      eyeLineY: 162,
-      noseCurve: "M 200 66 L 200 246",
-    },
+    { key: "front", label: "Nhìn thẳng", faIcon: "face-smile", targetX: 200, targetY: 155, eyeLineY: 126, noseCurve: "M 200 62 L 200 242" },
+    { key: "left", label: "Quay trái", faIcon: "arrow-left", targetX: 148, targetY: 155, eyeLineY: 126, noseCurve: "M 185 62 Q 138 152 185 242" },
+    { key: "right", label: "Quay phải", faIcon: "arrow-right", targetX: 252, targetY: 155, eyeLineY: 126, noseCurve: "M 215 62 Q 262 152 215 242" },
+    { key: "up", label: "Ngẩng lên", faIcon: "arrow-up", targetX: 200, targetY: 118, eyeLineY: 96, noseCurve: "M 200 58 L 200 236" },
+    { key: "down", label: "Cúi xuống", faIcon: "arrow-down", targetX: 200, targetY: 190, eyeLineY: 162, noseCurve: "M 200 66 L 200 246" },
   ];
+
+  const CAPTURE_W = 240;
+  const CAPTURE_H = 180;
 
   let currentUser = null;
   let activeAngleIndex = 0;
@@ -82,15 +30,22 @@ window.PortalFaceIdTab = (() => {
   let analyzerTimer = null;
   let prevSampleData = null;
   let stableAlignedTicks = 0;
+  let autoCapture = true;
+  let starting = false;
   let liveFaceDot = { x: 200, y: 155, aligned: false };
 
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
   function renderHudOverlay(isAligned = false) {
-    const hudEl = document.getElementById("faceHudSvg");
+    const hudEl = $("faceHudSvg");
     if (!hudEl) return;
 
     const angle = ANGLES[activeAngleIndex] || ANGLES[0];
-    const ovalStroke = isAligned ? "#22c55e" : "#f2ff47";
-    const ovalDash = isAligned ? "none" : "9 7";
+    const stroke = isAligned ? "#22c55e" : "#f2ff47";
+    const dash = isAligned ? "none" : "9 7";
 
     hudEl.innerHTML = `
       <defs>
@@ -99,24 +54,12 @@ window.PortalFaceIdTab = (() => {
           <ellipse cx="200" cy="150" rx="98" ry="118" fill="black"></ellipse>
         </mask>
       </defs>
-      <!-- Dimmed outside mask -->
       <rect width="400" height="300" fill="rgba(12, 12, 10, 0.48)" mask="url(#faceOvalCutout)"></rect>
-
-      <!-- Main Face Oval Guide -->
-      <ellipse cx="200" cy="150" rx="98" ry="118" fill="none" stroke="${ovalStroke}" stroke-width="3.2" stroke-dasharray="${ovalDash}"></ellipse>
-
-      <!-- Eye-level Pitch Reference Line -->
-      <line x1="112" y1="${angle.eyeLineY}" x2="288" y2="${angle.eyeLineY}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="5 5"></line>
-      <text x="118" y="${angle.eyeLineY - 5}" fill="rgba(255,255,255,0.75)" font-size="10" font-weight="700">MẮT</text>
-
-      <!-- 3D Yaw Nose Axis Curve -->
+      <ellipse cx="200" cy="150" rx="98" ry="118" fill="none" stroke="${stroke}" stroke-width="3.2" stroke-dasharray="${dash}"></ellipse>
+      <line x1="112" y1="${angle.eyeLineY}" x2="288" y2="${angle.eyeLineY}" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="5 5"></line>
       <path d="${angle.noseCurve}" fill="none" stroke="rgba(242, 255, 71, 0.72)" stroke-width="2" stroke-dasharray="4 4"></path>
-
-      <!-- Target Nose Alignment Reticle -->
-      <circle cx="${angle.targetX}" cy="${angle.targetY}" r="18" fill="rgba(242, 255, 71, 0.16)" stroke="${ovalStroke}" stroke-width="2.5"></circle>
-      <circle cx="${angle.targetX}" cy="${angle.targetY}" r="4.5" fill="${ovalStroke}"></circle>
-
-      <!-- Live Face Center Indicator (shown when camera active) -->
+      <circle cx="${angle.targetX}" cy="${angle.targetY}" r="18" fill="rgba(242, 255, 71, 0.16)" stroke="${stroke}" stroke-width="2.5"></circle>
+      <circle cx="${angle.targetX}" cy="${angle.targetY}" r="4.5" fill="${stroke}"></circle>
       ${
         mediaStream
           ? `<circle cx="${liveFaceDot.x}" cy="${liveFaceDot.y}" r="7" fill="${isAligned ? "#22c55e" : "#38bdf8"}" stroke="#ffffff" stroke-width="2"></circle>`
@@ -125,64 +68,39 @@ window.PortalFaceIdTab = (() => {
     `;
   }
 
-  function updateGuideBanner() {
-    const angle = ANGLES[activeAngleIndex] || ANGLES[0];
-    const titleEl = document.getElementById("faceGuideTitle");
-    const descEl = document.getElementById("faceGuideDesc");
-    const iconEl = document.getElementById("faceGuideIcon");
-    if (titleEl) titleEl.textContent = angle.detailTitle;
-    if (descEl) descEl.textContent = angle.detailInstruction;
-    if (iconEl) iconEl.innerHTML = icon(angle.faIcon);
-  }
-
-  function setTelemetryPill(id, text, state) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.className = `telemetry-pill ${state || ""}`;
-    el.innerHTML = text;
+  function isComplete() {
+    return ANGLES.every((a) => capturedAngles[a.key]);
   }
 
   function renderAngleSteps() {
-    const grid = document.getElementById("faceAngleStepsGrid");
-    const promptEl = document.getElementById("facePromptPill");
-    const progressEl = document.getElementById("faceProgressText");
-    const saveBtn = document.getElementById("faceSaveEnrollBtn");
+    const grid = $("faceAngleStepsGrid");
+    const promptEl = $("facePromptPill");
+    const saveBtn = $("faceSaveEnrollBtn");
     if (!grid) return;
 
-    const capturedCount = Object.keys(capturedAngles).length;
-    if (progressEl) {
-      progressEl.textContent = `Tiến độ: ${capturedCount}/${ANGLES.length} góc đã chụp`;
-    }
+    const angle = ANGLES[activeAngleIndex] || ANGLES[0];
     if (promptEl) {
-      const current = ANGLES[activeAngleIndex] || ANGLES[0];
-      promptEl.textContent =
-        capturedCount === ANGLES.length
-          ? "Đã đủ 5 góc! Nhấn Lưu để kích hoạt Face ID"
-          : `Bước ${activeAngleIndex + 1}/5: ${current.shortPrompt}`;
+      promptEl.innerHTML = isComplete()
+        ?`${icon("circle-check")} Đủ 5 góc`
+        : `${icon(angle.faIcon)} ${angle.label}`;
     }
-    if (saveBtn) {
-      saveBtn.disabled = capturedCount < ANGLES.length;
-    }
+    if (saveBtn) saveBtn.hidden = !isComplete();
 
-    updateGuideBanner();
     renderHudOverlay(liveFaceDot.aligned);
 
-    grid.innerHTML = ANGLES.map((angle, idx) => {
-      const imgData = capturedAngles[angle.key];
-      const isCurrent = idx === activeAngleIndex;
+    grid.innerHTML = ANGLES.map((a, idx) => {
+      const img = capturedAngles[a.key];
+      const cls = `${idx === activeAngleIndex ? "current" : ""} ${img ? "captured" : ""}`;
       return `
-        <div class="angle-step-card ${isCurrent ? "current" : ""} ${imgData ? "captured" : ""}" data-angle-idx="${idx}">
-          <div class="angle-thumb">
-            ${imgData ? `<img src="${imgData}" alt="${angle.label}">` : icon(angle.faIcon)}
-          </div>
-          <div class="angle-step-name">${angle.label}</div>
-        </div>
+        <button type="button" class="angle-step-card ${cls}" data-angle-idx="${idx}" title="${a.label}" aria-label="${a.label}">
+          ${img ? `<img src="${img}" alt="">` : icon(a.faIcon)}
+        </button>
       `;
     }).join("");
 
-    grid.querySelectorAll("[data-angle-idx]").forEach((card) => {
-      card.addEventListener("click", () => {
-        activeAngleIndex = parseInt(card.getAttribute("data-angle-idx"), 10);
+    grid.querySelectorAll("[data-angle-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeAngleIndex = parseInt(btn.getAttribute("data-angle-idx"), 10);
         stableAlignedTicks = 0;
         renderAngleSteps();
       });
@@ -190,32 +108,43 @@ window.PortalFaceIdTab = (() => {
   }
 
   function updateStatusUI(statusData) {
-    const toggle = document.getElementById("faceAuthToggleInput");
-    const badge = document.getElementById("faceStatusBadge");
-    const desc = document.getElementById("faceStatusDesc");
-
+    const toggle = $("faceAuthToggleInput");
+    const badge = $("faceStatusBadge");
     const enabled = Boolean(statusData.face_auth_enabled);
     const registered = Boolean(statusData.face_registered);
-    const enrolledList = statusData.enrolled_angles || [];
 
     if (toggle) toggle.checked = enabled;
     if (badge) {
-      badge.textContent = enabled ? "ĐANG BẬT" : registered ? "ĐANG TẮT" : "CHƯA ĐĂNG KÝ";
+      badge.textContent = enabled ? "Đang bật" : registered ? "Đang tắt" : "Chưa đăng ký";
       badge.className = `pill-badge ${enabled ? "COLLECTED" : registered ? "OCCUPIED" : "REGISTERED"}`;
-    }
-    if (desc) {
-      desc.textContent = registered
-        ? `Đã đăng ký ${enrolledList.length}/5 góc khuôn mặt. Có thể mở tủ bằng khuôn mặt hoặc OTP.`
-        : "Chưa có dữ liệu khuôn mặt. Hãy căn chỉnh và chụp đủ 5 góc độ bên dưới để kích hoạt.";
     }
   }
 
-  function analyzeVideoFrame() {
-    const video = document.getElementById("faceCameraVideo");
-    const analysisCanvas = document.getElementById("faceAnalysisCanvas");
-    const countdownEl = document.getElementById("faceCountdownBadge");
-    const autoCaptureToggle = document.getElementById("faceAutoCaptureToggle");
+  function setTelemetry(id, ok, title) {
+    const el = $(id);
+    if (!el) return;
+    el.className = `tel-dot ${ok ? "ok" : "warn"}`;
+    el.title = title;
+  }
 
+  function setLive(isLive) {
+    const stage = $("faceCameraStage");
+    if (stage) stage.classList.toggle("is-live", isLive);
+  }
+
+  function showCountdown(value) {
+    const el = $("faceCountdownBadge");
+    if (!el) return;
+    el.classList.toggle("show", value !== null);
+    if (value !== null) el.textContent = String(value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Live frame analysis (brightness, framing, stability)
+  // ---------------------------------------------------------------------------
+  function analyzeVideoFrame() {
+    const video = $("faceCameraVideo");
+    const analysisCanvas = $("faceAnalysisCanvas");
     if (!video || !mediaStream || !analysisCanvas || video.videoWidth === 0) return;
 
     const w = 80;
@@ -224,7 +153,7 @@ window.PortalFaceIdTab = (() => {
     analysisCanvas.height = h;
     const ctx = analysisCanvas.getContext("2d", { willReadFrequently: true });
 
-    // Mirror to match preview
+    // Mirror to match the preview
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(video, -w, 0, w, h);
@@ -232,9 +161,8 @@ window.PortalFaceIdTab = (() => {
 
     const frame = ctx.getImageData(0, 0, w, h).data;
 
-    // 1. Analyze brightness & weighted center inside oval region
     let sumLuma = 0;
-    let ovalPixels = 0;
+    let pixels = 0;
     let weightedX = 0;
     let weightedY = 0;
     let weightTotal = 0;
@@ -248,111 +176,157 @@ window.PortalFaceIdTab = (() => {
         const b = frame[idx + 2];
         const luma = 0.299 * r + 0.587 * g + 0.114 * b;
         sumLuma += luma;
-        ovalPixels++;
+        pixels++;
 
-        // Skin/face prominence heuristic for centroid estimation
+        // Skin-tone prominence heuristic for a rough face centroid
         const isSkinLike = r > 65 && g > 40 && b > 25 && r > g && r > b && Math.abs(r - g) > 10;
         const wFactor = isSkinLike ? 3.0 : luma > 75 ? 0.6 : 0.1;
         weightedX += x * wFactor;
         weightedY += y * wFactor;
         weightTotal += wFactor;
 
-        if (prevSampleData) {
-          motionDiff += Math.abs(luma - prevSampleData[y * w + x]);
-        }
+        if (prevSampleData) motionDiff += Math.abs(luma - prevSampleData[y * w + x]);
       }
     }
 
-    // Store compact luma buffer for next stability check
-    const curLumaBuf = new Uint8Array(w * h);
+    const lumaBuf = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) {
       const p = i * 4;
-      curLumaBuf[i] = (0.299 * frame[p] + 0.587 * frame[p + 1] + 0.114 * frame[p + 2]) | 0;
+      lumaBuf[i] = (0.299 * frame[p] + 0.587 * frame[p + 1] + 0.114 * frame[p + 2]) | 0;
     }
-    prevSampleData = curLumaBuf;
+    prevSampleData = lumaBuf;
 
-    const avgLuma = ovalPixels > 0 ? sumLuma / ovalPixels : 0;
-    const avgMotion = ovalPixels > 0 ? motionDiff / ovalPixels : 99;
-
+    const avgLuma = pixels > 0 ? sumLuma / pixels : 0;
+    const avgMotion = pixels > 0 ? motionDiff / pixels : 99;
     const cx = weightTotal > 0 ? (weightedX / weightTotal / w) * 400 : 200;
     const cy = weightTotal > 0 ? (weightedY / weightTotal / h) * 300 : 150;
 
-    // Smooth indicator dot
     liveFaceDot.x = Math.round(liveFaceDot.x * 0.45 + cx * 0.55);
     liveFaceDot.y = Math.round(liveFaceDot.y * 0.45 + cy * 0.55);
 
     const lightOk = avgLuma >= 55 && avgLuma <= 225;
-    const frameCentered = Math.abs(liveFaceDot.x - 200) < 62 && Math.abs(liveFaceDot.y - 150) < 58;
-    const isStable = avgMotion < 12.5;
-    const allGood = lightOk && frameCentered && isStable;
+    const frameOk = Math.abs(liveFaceDot.x - 200) < 62 && Math.abs(liveFaceDot.y - 150) < 58;
+    const stableOk = avgMotion < 12.5;
+    const allGood = lightOk && frameOk && stableOk;
     liveFaceDot.aligned = allGood;
 
-    // Update 3 live telemetry pills
-    setTelemetryPill(
-      "telLight",
-      `${icon("sun")} ${avgLuma < 55 ? "Thiếu sáng" : avgLuma > 225 ? "Quá chói" : "Ánh sáng tốt"}`,
-      lightOk ? "ok" : "warn"
-    );
-    setTelemetryPill(
-      "telFrame",
-      `${icon("crosshairs")} ${frameCentered ? "Khớp khung mặt" : "Đưa mặt vào giữa"}`,
-      frameCentered ? "ok" : "warn"
-    );
-    setTelemetryPill(
-      "telStable",
-      `${icon("circle-check")} ${isStable ? "Đầu ổn định" : "Giữ yên đầu"}`,
-      isStable ? "ok" : "warn"
-    );
+    setTelemetry("telLight", lightOk, avgLuma < 55 ? "Thiếu sáng" : avgLuma > 225 ? "Quá chói" : "Ánh sáng tốt");
+    setTelemetry("telFrame", frameOk, frameOk ? "Khớp khung" : "Đưa mặt vào giữa");
+    setTelemetry("telStable", stableOk, stableOk ? "Ổn định" : "Giữ yên đầu");
 
     renderHudOverlay(allGood);
 
-    // Optional Auto-Capture Countdown when aligned & stable
-    const autoOn = autoCaptureToggle && autoCaptureToggle.checked;
-    const alreadyComplete = Object.keys(capturedAngles).length >= ANGLES.length;
-    if (autoOn && allGood && !alreadyComplete) {
+    if (autoCapture && allGood && !isComplete()) {
       stableAlignedTicks++;
-      const remaining = Math.max(1, 4 - Math.ceil(stableAlignedTicks / 2));
-      if (countdownEl) {
-        countdownEl.style.display = "block";
-        countdownEl.textContent = `Giữ nguyên... ${remaining}`;
-      }
+      showCountdown(Math.max(1, 4 - Math.ceil(stableAlignedTicks / 2)));
       if (stableAlignedTicks >= 7) {
         stableAlignedTicks = 0;
-        if (countdownEl) countdownEl.style.display = "none";
-        captureCurrentAngle();
+        showCountdown(null);
+        captureFromVideo();
       }
     } else {
       stableAlignedTicks = 0;
-      if (countdownEl) countdownEl.style.display = "none";
+      showCountdown(null);
     }
   }
 
-  async function startCamera() {
-    const video = document.getElementById("faceCameraVideo");
-    const startBtn = document.getElementById("faceStartCameraBtn");
-    if (!video) return;
+  // ---------------------------------------------------------------------------
+  // Camera lifecycle
+  // ---------------------------------------------------------------------------
+  function canUseLiveCamera() {
+    return Boolean(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      window.SmartAuth.showToast("Trình duyệt không hỗ trợ Camera. Bạn có thể bấm Chụp Góc Này để dùng khung mẫu.", "error");
+  function httpsHint() {
+    return `https://${location.hostname}:8443${location.pathname}`;
+  }
+
+  function describeCameraError(err) {
+    switch (err && err.name) {
+      case "NotAllowedError":
+      case "SecurityError":
+        return "Camera bị chặn. Hãy cho phép quyền camera cho trang này rồi thử lại.";
+      case "NotFoundError":
+      case "OverconstrainedError":
+        return "Không tìm thấy camera trên thiết bị.";
+      case "NotReadableError":
+      case "AbortError":
+        return "Camera đang được ứng dụng khác sử dụng (Zoom, Teams, Camera...). Hãy tắt ứng dụng đó rồi thử lại.";
+      default:
+        return "Không mở được camera.";
+    }
+  }
+
+  async function requestStream() {
+    const attempts = [
+      { video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+      { video: { facingMode: "user" }, audio: false },
+      { video: true, audio: false },
+    ];
+    let lastErr = null;
+    for (const constraints of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        lastErr = err;
+        // Permission / security errors will not be fixed by looser constraints
+        if (err && (err.name === "NotAllowedError" || err.name === "SecurityError")) break;
+      }
+    }
+    throw lastErr;
+  }
+
+  function waitForMetadata(video) {
+    if (video.readyState >= 1) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        video.removeEventListener("loadedmetadata", done);
+        resolve();
+      };
+      video.addEventListener("loadedmetadata", done);
+      setTimeout(done, 3000);
+    });
+  }
+
+  async function startCamera() {
+    if (mediaStream || starting) return;
+
+    if (!canUseLiveCamera()) {
+      // Must run synchronously inside the click so iOS allows the file picker
+      openNativeCapture();
+      if (!window.isSecureContext) {
+        toast(`Camera trực tiếp cần HTTPS — đang dùng camera của máy. Mở ${httpsHint()} để có khung căn mặt.`, "error", 6500);
+      }
       return;
     }
+
+    const video = $("faceCameraVideo");
+    if (!video) return;
+
+    starting = true;
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      });
-      video.srcObject = mediaStream;
-      await video.play();
-      if (startBtn) startBtn.innerHTML = `${icon("video")} Camera Đang Bật`;
+      const stream = await requestStream();
+      mediaStream = stream;
+
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("muted", "");
+      video.srcObject = stream;
+      await waitForMetadata(video);
+      await video.play().catch(() => {});
 
       prevSampleData = null;
       stableAlignedTicks = 0;
+      setLive(true);
       if (analyzerTimer) clearInterval(analyzerTimer);
       analyzerTimer = setInterval(analyzeVideoFrame, 180);
-
-      window.SmartAuth.showToast("Đã bật Camera! Hãy căn mắt theo đường kẻ và đưa mũi vào vòng tâm ngắm.");
+      renderAngleSteps();
     } catch (err) {
-      window.SmartAuth.showToast("Không thể truy cập Camera (kiểm tra quyền truy cập hoặc HTTPS).", "error");
+      stopCamera();
+      toast(`${describeCameraError(err)} Có thể bấm nút chụp để dùng camera của máy.`, "error", 6000);
+    } finally {
+      starting = false;
     }
   }
 
@@ -365,56 +339,112 @@ window.PortalFaceIdTab = (() => {
       mediaStream.getTracks().forEach((t) => t.stop());
       mediaStream = null;
     }
-    const video = document.getElementById("faceCameraVideo");
+    const video = $("faceCameraVideo");
     if (video) video.srcObject = null;
-    const startBtn = document.getElementById("faceStartCameraBtn");
-    if (startBtn) startBtn.innerHTML = `${icon("video")} Bật Camera`;
-    const countdownEl = document.getElementById("faceCountdownBadge");
-    if (countdownEl) countdownEl.style.display = "none";
+    liveFaceDot.aligned = false;
+    stableAlignedTicks = 0;
+    showCountdown(null);
+    setLive(false);
     renderHudOverlay(false);
   }
 
-  function captureCurrentAngle() {
-    const video = document.getElementById("faceCameraVideo");
-    const canvas = document.getElementById("faceCaptureCanvas");
-    if (!canvas) return;
-
+  // ---------------------------------------------------------------------------
+  // Capture
+  // ---------------------------------------------------------------------------
+  function storeCapture(dataUrl) {
     const angle = ANGLES[activeAngleIndex];
-    const ctx = canvas.getContext("2d");
-    canvas.width = 240;
-    canvas.height = 180;
-
-    if (video && mediaStream && video.videoWidth > 0) {
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = "#181816";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#f2ff47";
-      ctx.font = "bold 16px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`FACE ANGLE: ${angle.key.toUpperCase()}`, canvas.width / 2, canvas.height / 2);
-    }
-
-    capturedAngles[angle.key] = canvas.toDataURL("image/jpeg", 0.68);
-    window.SmartAuth.showToast(`Đã chụp xong góc: ${angle.label}`);
+    capturedAngles[angle.key] = dataUrl;
 
     const nextMissing = ANGLES.findIndex((a) => !capturedAngles[a.key]);
-    if (nextMissing !== -1) {
-      activeAngleIndex = nextMissing;
-    }
+    if (nextMissing !== -1) activeAngleIndex = nextMissing;
     stableAlignedTicks = 0;
     renderAngleSteps();
   }
 
+  function captureFromVideo() {
+    const video = $("faceCameraVideo");
+    const canvas = $("faceCaptureCanvas");
+    if (!canvas || !video || !mediaStream || video.videoWidth === 0) return;
+
+    canvas.width = CAPTURE_W;
+    canvas.height = CAPTURE_H;
+    const ctx = canvas.getContext("2d");
+    ctx.save();
+    ctx.scale(-1, 1);
+    drawCover(ctx, video, video.videoWidth, video.videoHeight, -CAPTURE_W, 0);
+    ctx.restore();
+    storeCapture(canvas.toDataURL("image/jpeg", 0.68));
+  }
+
+  // Center-crop source into the 4:3 capture canvas (like object-fit: cover)
+  function drawCover(ctx, source, srcW, srcH, dx = 0, dy = 0) {
+    const targetRatio = CAPTURE_W / CAPTURE_H;
+    let sw = srcW;
+    let sh = srcH;
+    if (srcW / srcH > targetRatio) sw = srcH * targetRatio;
+    else sh = srcW / targetRatio;
+    const sx = (srcW - sw) / 2;
+    const sy = (srcH - sh) / 2;
+    ctx.drawImage(source, sx, sy, sw, sh, dx, dy, CAPTURE_W, CAPTURE_H);
+  }
+
+  function openNativeCapture() {
+    const input = $("faceNativeCaptureInput");
+    if (input) {
+      input.value = "";
+      input.click();
+    }
+  }
+
+  function handleNativeFile() {
+    const input = $("faceNativeCaptureInput");
+    const canvas = $("faceCaptureCanvas");
+    if (!input || !canvas || !input.files || input.files.length === 0) return;
+
+    const url = URL.createObjectURL(input.files[0]);
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = CAPTURE_W;
+      canvas.height = CAPTURE_H;
+      drawCover(canvas.getContext("2d"), img, img.naturalWidth, img.naturalHeight);
+      URL.revokeObjectURL(url);
+      storeCapture(canvas.toDataURL("image/jpeg", 0.68));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      toast("Không đọc được ảnh vừa chụp.", "error");
+    };
+    img.src = url;
+  }
+
+  function handleShutter() {
+    if (mediaStream) captureFromVideo();
+    else openNativeCapture();
+  }
+
+  function toggleAutoCapture() {
+    autoCapture = !autoCapture;
+    const btn = $("faceAutoCaptureBtn");
+    if (btn) {
+      btn.classList.toggle("is-on", autoCapture);
+      btn.setAttribute("aria-pressed", String(autoCapture));
+      btn.title = `Tự động chụp: ${autoCapture ? "bật" : "tắt"}`;
+    }
+    if (!autoCapture) {
+      stableAlignedTicks = 0;
+      showCountdown(null);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // API
+  // ---------------------------------------------------------------------------
   async function saveEnrollment() {
-    if (!currentUser) return;
-    const saveBtn = document.getElementById("faceSaveEnrollBtn");
+    if (!currentUser || !isComplete()) return;
+    const saveBtn = $("faceSaveEnrollBtn");
     if (saveBtn) {
       saveBtn.disabled = true;
-      saveBtn.textContent = "Đang lưu dữ liệu 5 góc...";
+      saveBtn.innerHTML = `${icon("rotate-right")} Đang lưu...`;
     }
 
     try {
@@ -429,13 +459,13 @@ window.PortalFaceIdTab = (() => {
         face_angles_enrolled: res.enrolled_angles,
       });
       stopCamera();
-      window.SmartAuth.showToast(res.message || "Đăng ký Face ID 5 góc thành công!");
+      toast(res.message || "Đã lưu Face ID.");
     } catch (err) {
-      window.SmartAuth.showToast(err.message || "Lỗi khi lưu dữ liệu khuôn mặt.", "error");
+      toast(err.message || "Lỗi khi lưu dữ liệu khuôn mặt.", "error");
     } finally {
       if (saveBtn) {
-        saveBtn.disabled = Object.keys(capturedAngles).length < ANGLES.length;
-        saveBtn.innerHTML = `${icon("circle-check")} Lưu & Kích Hoạt Face ID`;
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `${icon("circle-check")} Lưu Face ID`;
       }
     }
   }
@@ -444,24 +474,20 @@ window.PortalFaceIdTab = (() => {
     if (!currentUser) return;
     const enabled = e.target.checked;
     try {
-      const res = await window.SmartApi.post("/auth/face/toggle", {
-        user_id: currentUser.id,
-        enabled,
-      });
+      const res = await window.SmartApi.post("/auth/face/toggle", { user_id: currentUser.id, enabled });
       updateStatusUI(res);
       window.SmartAuth.updateSessionUser({ face_auth_enabled: res.face_auth_enabled });
-      window.SmartAuth.showToast(res.message);
+      toast(res.message);
     } catch (err) {
       e.target.checked = !enabled;
-      window.SmartAuth.showToast(err.message || "Không thể thay đổi trạng thái Face ID.", "error");
+      toast(err.message || "Không thể thay đổi trạng thái Face ID.", "error");
     }
   }
 
   async function refreshStatus() {
     if (!currentUser) return;
     try {
-      const res = await window.SmartApi.get(`/auth/face/status/${currentUser.id}`);
-      updateStatusUI(res);
+      updateStatusUI(await window.SmartApi.get(`/auth/face/status/${currentUser.id}`));
     } catch (_) {}
   }
 
@@ -470,24 +496,29 @@ window.PortalFaceIdTab = (() => {
     renderAngleSteps();
     refreshStatus();
 
-    const toggle = document.getElementById("faceAuthToggleInput");
-    const startBtn = document.getElementById("faceStartCameraBtn");
-    const captureBtn = document.getElementById("faceCaptureAngleBtn");
-    const resetBtn = document.getElementById("faceResetAnglesBtn");
-    const saveBtn = document.getElementById("faceSaveEnrollBtn");
+    const on = (id, evt, fn) => {
+      const el = $(id);
+      if (el) el.addEventListener(evt, fn);
+    };
 
-    if (toggle) toggle.addEventListener("change", handleToggleChange);
-    if (startBtn) startBtn.addEventListener("click", startCamera);
-    if (captureBtn) captureBtn.addEventListener("click", captureCurrentAngle);
-    if (resetBtn) {
-      resetBtn.addEventListener("click", () => {
-        capturedAngles = {};
-        activeAngleIndex = 0;
-        stableAlignedTicks = 0;
-        renderAngleSteps();
-      });
-    }
-    if (saveBtn) saveBtn.addEventListener("click", saveEnrollment);
+    on("faceAuthToggleInput", "change", handleToggleChange);
+    on("faceStartCameraBtn", "click", startCamera);
+    on("faceCaptureAngleBtn", "click", handleShutter);
+    on("faceAutoCaptureBtn", "click", toggleAutoCapture);
+    on("faceNativeCaptureInput", "change", handleNativeFile);
+    on("faceSaveEnrollBtn", "click", saveEnrollment);
+    on("faceResetAnglesBtn", "click", () => {
+      capturedAngles = {};
+      activeAngleIndex = 0;
+      stableAlignedTicks = 0;
+      renderAngleSteps();
+    });
+
+    // Release the camera when the page is hidden (tab switch, app switch on iOS)
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopCamera();
+    });
+    window.addEventListener("pagehide", stopCamera);
   }
 
   return { init, stopCamera, refreshStatus };

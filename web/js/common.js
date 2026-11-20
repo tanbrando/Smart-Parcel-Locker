@@ -49,122 +49,63 @@ function renderSharedSidebar(activePage = "dashboard") {
       <div class="mobile-top-user">
         <div class="brand-badge">PL</div>
         <div>
-          <div style="font-weight:800; font-size:1.02rem;">SmartLocker Admin</div>
+          <div style="font-weight:800; font-size:1.02rem;">SmartLocker</div>
           <div style="font-size:0.82rem; color:var(--text-muted);">${user.full_name}</div>
         </div>
       </div>
       <div style="display:flex; gap:6px;">
-        <a href="/portal" class="mobile-logout-btn" style="text-decoration:none;">${_icon("mobile-screen")} User</a>
-        <button onclick="handleSharedLogout()" class="mobile-logout-btn">${_icon("right-from-bracket")} Thoát</button>
+        <a href="/logs" class="icon-btn" title="Nhật ký" aria-label="Nhật ký">${_icon("clipboard-list")}</a>
+        <a href="/portal" class="icon-btn" title="Cổng người dùng" aria-label="Cổng người dùng">${_icon("mobile-screen")}</a>
+        <button onclick="handleSharedLogout()" class="icon-btn danger" title="Đăng xuất" aria-label="Đăng xuất">${_icon("right-from-bracket")}</button>
       </div>
     `;
     mainContent.insertBefore(mobileHeader, mainContent.firstChild);
   }
 
+  const link = (page, href, iconName, full, short, badge = "", extraClass = "") => `
+    <a href="${href}" class="nav-link ${activePage === page ? "active" : ""} ${extraClass}">
+      <span class="nav-link-content">
+        <span class="nav-icon">${_icon(iconName)}</span>
+        <span class="nav-label-full">${full}</span>
+        ${short ? `<span class="nav-label-short">${short}</span>` : ""}
+      </span>
+      ${badge}
+    </a>`;
+
   sidebarContainer.innerHTML = `
     <aside class="sidebar">
-      <!-- Brand Logo -->
       <div class="sidebar-brand">
         <div class="brand-badge">PL</div>
         <div class="brand-name">SmartLocker</div>
       </div>
 
-      <!-- Station Pill -->
-      <div class="station-pill">
-        <div>
-          Trạm KTX Khu A
-          <span>3 Ngăn Tủ Thông Minh</span>
-        </div>
-        <span style="font-size:0.78rem; color:var(--text-muted); font-weight:700;">ADMIN</span>
-      </div>
-
-      <!-- Main Navigation Links -->
-      <div class="nav-section-title">Hệ Thống Quản Lý</div>
       <nav class="sidebar-nav">
-        <a href="/" class="nav-link ${activePage === "dashboard" ? "active" : ""}">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("chart-pie")}</span>
-            <span class="nav-label-full">Tổng Quan</span>
-            <span class="nav-label-short">Tổng quan</span>
-          </span>
-          <span class="nav-badge" id="sideBadgeLockers">3</span>
-        </a>
-        <a href="/orders" class="nav-link ${activePage === "orders" ? "active" : ""}">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("box-open")}</span>
-            <span class="nav-label-full">Đơn Hàng & Bưu Kiện</span>
-            <span class="nav-label-short">Đơn hàng</span>
-          </span>
-          <span class="nav-badge" id="sideBadgeOrders">-</span>
-        </a>
-        <a href="/lockers" class="nav-link ${activePage === "lockers" ? "active" : ""}">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("vault")}</span>
-            <span class="nav-label-full">Ngăn Tủ Vật Lý</span>
-            <span class="nav-label-short">Ngăn tủ</span>
-          </span>
-          <span class="nav-badge">3 Tủ</span>
-        </a>
-        <a href="/users" class="nav-link ${activePage === "users" ? "active" : ""}">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("users")}</span>
-            <span class="nav-label-full">Khách Hàng & Tài Khoản</span>
-            <span class="nav-label-short">Khách</span>
-          </span>
-          <span class="nav-badge" id="sideBadgeUsers">-</span>
-        </a>
-        <a href="/logs" class="nav-link ${activePage === "logs" ? "active" : ""} desktop-only">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("clipboard-list")}</span>
-            <span class="nav-label-full">Nhật Ký Kiểm Toán</span>
-            <span class="nav-label-short">Nhật ký</span>
-          </span>
-        </a>
-
-        <div class="nav-section-title" style="margin-top:14px;">Công Cụ Kỹ Thuật</div>
-        <a href="/simulator" class="nav-link ${activePage === "simulator" ? "active" : ""}">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("terminal")}</span>
-            <span class="nav-label-full">Bàn Giả Lập & Test</span>
-            <span class="nav-label-short">Giả lập</span>
-          </span>
-          <span class="nav-badge" style="color:var(--accent-yellow-dark);">Console</span>
-        </a>
-        <a href="/portal" class="nav-link desktop-only">
-          <span class="nav-link-content">
-            <span class="nav-icon">${_icon("mobile-screen")}</span>
-            <span class="nav-label-full">Cổng Người Dùng</span>
-            <span class="nav-label-short">Portal</span>
-          </span>
-        </a>
-        <a href="/docs" target="_blank" class="nav-link desktop-only">
+        ${link("dashboard", "/", "chart-pie", "Tổng quan", "Tổng quan")}
+        ${link("orders", "/orders", "box-open", "Đơn hàng", "Đơn hàng", `<span class="nav-badge" id="sideBadgeOrders"></span>`)}
+        ${link("lockers", "/lockers", "vault", "Ngăn tủ", "Ngăn tủ")}
+        ${link("users", "/users", "users", "Khách hàng", "Khách", `<span class="nav-badge" id="sideBadgeUsers"></span>`)}
+        ${link("logs", "/logs", "clipboard-list", "Nhật ký", "Nhật ký", "", "desktop-only")}
+        ${link("simulator", "/simulator", "terminal", "Giả lập", "Giả lập")}
+        ${link("portal", "/portal", "mobile-screen", "Cổng người dùng", "", "", "desktop-only")}
+        <a href="/docs" target="_blank" rel="noopener" class="nav-link desktop-only">
           <span class="nav-link-content">
             <span class="nav-icon">${_icon("code")}</span>
-            <span class="nav-label-full">Swagger API Docs</span>
+            <span class="nav-label-full">API Docs</span>
           </span>
-          <span class="nav-badge">↗</span>
+          <span class="nav-badge">${_icon("arrow-up-right-from-square")}</span>
         </a>
       </nav>
 
-      <!-- Sidebar Footer -->
       <div class="sidebar-footer">
-        <div class="bot-status-card">
-          <div class="bot-status-header">
-            <span>Telegram Bot</span>
-            <span style="font-size:0.78rem; background:#181816; color:#fff; padding:3px 9px; border-radius:9999px;">Sẵn Sàng</span>
-          </div>
-          <div class="bot-status-sub" id="botStatusSub">@SmartParcelLockerBot</div>
-        </div>
-
         <div class="admin-profile-pill" style="justify-content:space-between;">
-          <div style="display:flex; align-items:center; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0;">
             <div class="admin-avatar">${initials}</div>
             <div class="admin-info">
               <b>${user.full_name}</b>
-              <span>Quản trị viên trạm</span>
+              <span>Admin</span>
             </div>
           </div>
-          <button onclick="handleSharedLogout()" title="Đăng xuất" style="border:none; background:transparent; cursor:pointer; font-size:0.9rem; font-weight:700; color:var(--danger); display:inline-flex; align-items:center; gap:4px;">
+          <button onclick="handleSharedLogout()" class="icon-btn sm danger" title="Đăng xuất" aria-label="Đăng xuất">
             ${_icon("right-from-bracket")}
           </button>
         </div>
