@@ -7,6 +7,29 @@ let globalOrders = [];
 let globalUsers = [];
 let globalLogs = [];
 
+function ensureAdminSession() {
+  try {
+    const raw = localStorage.getItem("smartlocker_session");
+    if (!raw) {
+      window.location.href = "/login";
+      return false;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.user) {
+      window.location.href = "/login";
+      return false;
+    }
+    if ((parsed.user.role || "USER").toUpperCase() !== "ADMIN") {
+      window.location.href = "/portal";
+      return false;
+    }
+    return true;
+  } catch (_) {
+    window.location.href = "/login";
+    return false;
+  }
+}
+
 // Fetch all common data
 async function fetchAllData() {
   try {
@@ -39,6 +62,7 @@ function updateSidebarBadges() {
 // 1. Dashboard Overview Page (index.html)
 // -----------------------------------------------------------------------------
 async function initDashboardPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("dashboard");
   checkGlobalHealth();
   await fetchAllData();
@@ -122,7 +146,7 @@ function renderDashboardRecentOrders() {
           <div class="item-avatar">PK</div>
           <div class="item-text">
             <b>${o.tracking_number}</b>
-            <span>${o.user ? o.user.full_name : "Khách"} • ${devText}</span>
+            <span>${o.recipient_name || (o.user ? o.user.full_name : "Khách")} • ${devText}</span>
           </div>
         </div>
         <span class="pill-badge ${o.status}">${o.status}</span>
@@ -161,6 +185,7 @@ function renderDashboardRecentLogs() {
 // 2. Lockers Page (lockers.html)
 // -----------------------------------------------------------------------------
 async function initLockersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("lockers");
   checkGlobalHealth();
   await fetchAllData();
@@ -228,6 +253,7 @@ async function toggleLockerMaintenance(id) {
 let currentOrderFilter = "ALL";
 
 async function initOrdersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("orders");
   checkGlobalHealth();
   await fetchAllData();
@@ -272,9 +298,9 @@ function renderOrdersTable() {
         <td><b>#${o.id}</b></td>
         <td><code>${o.tracking_number}</code></td>
         <td>${o.order_code || "-"}</td>
-        <td><b>${o.user ? o.user.full_name : "Khách"}</b></td>
+        <td><b>${o.recipient_name || (o.user ? o.user.full_name : "Khách")}</b></td>
         <td><span class="pill-badge ${o.status}">${o.status}</span></td>
-        <td>${o.locker ? `Ngăn #${o.locker.locker_number}` : "-"}</td>
+        <td>${o.locker_id ? `Ngăn #${o.locker_id}` : "-"}</td>
         <td>${o.expected_weight}g</td>
         <td>${o.actual_weight !== null ? `${o.actual_weight}g` : "-"}</td>
         <td>${devPill}</td>
@@ -288,6 +314,7 @@ function renderOrdersTable() {
 // 4. Users Page (users.html)
 // -----------------------------------------------------------------------------
 async function initUsersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("users");
   checkGlobalHealth();
   await fetchAllData();
@@ -304,7 +331,7 @@ function renderUsersTable() {
   if (!tbody) return;
 
   if (globalUsers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có tài khoản nào.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có tài khoản nào.</td></tr>`;
     return;
   }
 
@@ -313,12 +340,18 @@ function renderUsersTable() {
     const tgBadge = isLinked
       ? `<span class="pill-badge" style="background:#e0f2fe; color:#0369a1;">Đã Liên Kết (#${u.telegram_chat_id})</span>`
       : `<span class="pill-badge" style="background:#f1f5f9; color:#64748b;">Chưa Kích Hoạt</span>`;
+    const faceBadge = u.face_auth_enabled
+      ? `<span class="pill-badge COLLECTED">Đã Bật (${(u.face_angles_enrolled || []).length}/5)</span>`
+      : u.face_registered
+        ? `<span class="pill-badge OCCUPIED">Đang Tắt</span>`
+        : `<span class="pill-badge" style="background:#f1f5f9; color:#64748b;">Chưa ĐK</span>`;
 
     return `
       <tr>
         <td><b>#${u.id}</b></td>
-        <td><b>${u.full_name}</b></td>
+        <td><b>${u.full_name}</b> <span style="font-size:0.7rem; color:var(--text-muted);">(${u.role || "USER"})</span></td>
         <td><code>${u.phone}</code></td>
+        <td>${faceBadge}</td>
         <td>${tgBadge}</td>
         <td><code>/start ${u.id}</code></td>
         <td>
@@ -336,13 +369,15 @@ async function handleCreateUser(e) {
   e.preventDefault();
   const name = document.getElementById("newFullName").value.trim();
   const phone = document.getElementById("newPhone").value.trim();
+  const pwdEl = document.getElementById("newPassword");
+  const password = pwdEl ? pwdEl.value.trim() || "123456" : "123456";
   const resBox = document.getElementById("createUserResult");
 
   try {
     const res = await fetch(`${API_BASE}/orders/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name: name, phone: phone }),
+      body: JSON.stringify({ full_name: name, phone: phone, password: password }),
     });
 
     if (res.ok) {
@@ -379,6 +414,7 @@ async function adminUnlinkUser(userId) {
 // 5. Logs Page (logs.html)
 // -----------------------------------------------------------------------------
 async function initLogsPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("logs");
   checkGlobalHealth();
   await fetchAllData();
@@ -412,6 +448,7 @@ function renderLogsTable() {
 // 6. Simulator Page (simulator.html)
 // -----------------------------------------------------------------------------
 async function initSimulatorPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("simulator");
   checkGlobalHealth();
   await fetchAllData();

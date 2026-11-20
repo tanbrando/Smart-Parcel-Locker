@@ -2,6 +2,7 @@
 SQLAlchemy ORM Models: User, Locker, Order, and AccessLog [Person 4].
 Strict schema implementation adhering to the IoT Smart Parcel Locker specification.
 """
+import json
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
@@ -26,10 +27,27 @@ class User(Base):
     full_name = Column(String(100), nullable=False)
     phone = Column(String(15), unique=True, index=True, nullable=False)
     phone_last4 = Column(String(4), index=True, nullable=False)
+    role = Column(String(20), default="USER", nullable=False)
+    password_hash = Column(String(128), default="123456", nullable=False)
     telegram_chat_id = Column(BigInteger, unique=True, nullable=True)
+    face_auth_enabled = Column(Integer, default=0, nullable=False)
+    face_registered = Column(Integer, default=0, nullable=False)
+    face_data_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def face_angles_enrolled(self) -> list:
+        if not self.face_data_json:
+            return []
+        try:
+            data = json.loads(self.face_data_json)
+            if isinstance(data, dict):
+                return list(data.keys())
+        except Exception:
+            pass
+        return []
 
 
 class Locker(Base):

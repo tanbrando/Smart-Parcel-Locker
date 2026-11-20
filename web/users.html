@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>SmartLocker - Quản Lý Khách Hàng & Telegram</title>
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
@@ -23,12 +23,12 @@
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: 340px 1fr; gap: 16px;">
+      <div class="responsive-two-col">
         <!-- Form Provision User -->
         <div class="form-card">
           <div class="bento-title" style="margin-bottom:6px;">Cấp Tài Khoản Mới</div>
           <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:16px;">
-            Người dùng chỉ có thể dùng Bot sau khi được Quản trị viên cấp User ID tại đây.
+            Người dùng có thể đăng nhập Web Portal bằng SĐT + Mật khẩu và kích hoạt Telegram Bot.
           </p>
 
           <form id="createUserForm">
@@ -40,7 +40,11 @@
               <label for="newPhone">Số Điện Thoại</label>
               <input type="text" id="newPhone" class="form-control" placeholder="Ví dụ: 0912345678" required>
             </div>
-            <button type="submit" class="action-pill-btn" style="width:100%; justify-content:center;">Tạo & Cấp User ID</button>
+            <div class="form-group">
+              <label for="newPassword">Mật Khẩu Đăng Nhập</label>
+              <input type="text" id="newPassword" class="form-control" value="123456" placeholder="Mặc định: 123456">
+            </div>
+            <button type="submit" class="action-pill-btn" style="width:100%; justify-content:center;">Tạo & Cấp Tài Khoản</button>
           </form>
 
           <div id="createUserResult" style="display:none;"></div>
@@ -56,13 +60,14 @@
                   <th>User ID</th>
                   <th>Họ và Tên</th>
                   <th>Số Điện Thoại</th>
+                  <th>Face ID</th>
                   <th>Trạng Thái Telegram</th>
                   <th>Cú Pháp Kích Hoạt</th>
                   <th>Thao Tác</th>
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
+                <tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải dữ liệu...</td></tr>
               </tbody>
             </table>
           </div>
@@ -71,6 +76,7 @@
     </main>
   </div>
 
+  <script src="/static/js/core/icons.js"></script>
   <script src="/static/js/common.js"></script>
   <script src="/static/js/app.js"></script>
   <script>

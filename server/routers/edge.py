@@ -60,30 +60,62 @@ def verify_package(req: PackageVerificationRequest, db: Session = Depends(get_db
             .first()
         )
 
-    # Step 3: Check locker capacity
+    # Step 3: Check locker capacity with Same-User Co-location (Multi-Parcel Batching)
     available_locker = None
     if order:
-        # Check empty lockers first
-        available_locker = (
+        # Priority 1: Reuse an existing locker already holding STORED (or reserved) parcel(s) of the SAME user
+        same_user_lockers = (
             db.query(Locker)
+            .join(Order, Order.locker_id == Locker.id)
             .filter(
-                Locker.status == LockerStatus.EMPTY,
+                Order.user_id == order.user_id,
+                Order.id != order.id,
+                Order.status.in_([OrderStatus.STORED, OrderStatus.REGISTERED]),
+                Locker.status != LockerStatus.MAINTENANCE,
                 Locker.current_weight + req.ocr_weight <= Locker.max_weight,
             )
             .order_by(Locker.locker_number.asc())
-            .first()
+            .all()
         )
+        for candidate in same_user_lockers:
+            # Ensure no other user owns an active order in this locker
+            other_user_order = (
+                db.query(Order)
+                .filter(
+                    Order.locker_id == candidate.id,
+                    Order.user_id != order.user_id,
+                    Order.status.in_([OrderStatus.STORED, OrderStatus.REGISTERED]),
+                )
+                .first()
+            )
+            if not other_user_order:
+                available_locker = candidate
+                break
+
+        # Priority 2: Assign an EMPTY locker not reserved by another user
         if not available_locker:
-            # Check occupied lockers that still have remaining capacity
-            available_locker = (
+            empty_lockers = (
                 db.query(Locker)
                 .filter(
-                    Locker.status == LockerStatus.OCCUPIED,
+                    Locker.status == LockerStatus.EMPTY,
                     Locker.current_weight + req.ocr_weight <= Locker.max_weight,
                 )
                 .order_by(Locker.locker_number.asc())
-                .first()
+                .all()
             )
+            for candidate in empty_lockers:
+                reserved_by_other = (
+                    db.query(Order)
+                    .filter(
+                        Order.locker_id == candidate.id,
+                        Order.user_id != order.user_id,
+                        Order.status == OrderStatus.REGISTERED,
+                    )
+                    .first()
+                )
+                if not reserved_by_other:
+                    available_locker = candidate
+                    break
 
     # Reject if no order found or no locker capacity
     if not order or not available_locker:
@@ -148,8 +180,32 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
             content={"success": False, "message": "Invalid order_id or locker_number"},
         )
 
-    # 1. Generate 6-digit OTP (TTL 72 hours)
-    otp_code, expires_at = generate_otp(length=settings.OTP_LENGTH, hours_valid=settings.OTP_VALID_HOURS)
+    # 1. Reuse existing active OTP if the same user already has STORED parcel(s) in this locker
+    existing_same_user_orders = (
+        db.query(Order)
+        .filter(
+            Order.locker_id == locker.id,
+            Order.user_id == order.user_id,
+            Order.status == OrderStatus.STORED,
+            Order.id != order.id,
+            Order.otp_code.isnot(None),
+        )
+        .all()
+    )
+    reusable_otp = None
+    for prev_order in existing_same_user_orders:
+        if prev_order.otp_code and not is_otp_expired(prev_order.otp_expires_at):
+            reusable_otp = prev_order.otp_code
+            break
+
+    if reusable_otp:
+        _, expires_at = generate_otp(length=settings.OTP_LENGTH, hours_valid=settings.OTP_VALID_HOURS)
+        otp_code = reusable_otp
+        # Extend expiry uniformly for all co-located parcels sharing this OTP
+        for prev_order in existing_same_user_orders:
+            prev_order.otp_expires_at = expires_at
+    else:
+        otp_code, expires_at = generate_otp(length=settings.OTP_LENGTH, hours_valid=settings.OTP_VALID_HOURS)
 
     # 2. Check weight deviation against OCR expected weight
     expected = order.expected_weight if order.expected_weight > 0 else req.delta_weight
@@ -232,15 +288,17 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
             },
         )
 
-    # 2. Query order
-    order = (
+    # 2. Query all STORED orders matching this OTP (supports multiple co-located parcels sharing one OTP)
+    matched_orders = (
         db.query(Order)
         .filter(
             Order.otp_code == entered_pin,
             Order.status == OrderStatus.STORED,
         )
-        .first()
+        .order_by(Order.id.asc())
+        .all()
     )
+    order = matched_orders[0] if matched_orders else None
 
     # Check validity & expiration
     if not order or is_otp_expired(order.otp_expires_at):
@@ -262,24 +320,37 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
             },
         )
 
-    # 3. Valid OTP
+    # 3. Valid OTP -> Collect all co-located parcels sharing this OTP in the target locker
     otp_rate_limiter.reset()
     target_locker = order.locker
     locker_num = target_locker.locker_number if target_locker else 1
+    now_utc = datetime.now(timezone.utc)
 
-    # Update Order
-    order.status = OrderStatus.COLLECTED
-    order.collected_at = datetime.now(timezone.utc)
-    order.otp_code = None  # Consume OTP
+    collected_orders = [
+        o for o in matched_orders
+        if (target_locker is None or o.locker_id == target_locker.id)
+    ]
+    total_collected_weight = 0
+    collected_tracking_list = []
+
+    for o in collected_orders:
+        o.status = OrderStatus.COLLECTED
+        o.collected_at = now_utc
+        o.otp_code = None  # Consume OTP
+        total_collected_weight += (o.actual_weight or 0)
+        collected_tracking_list.append(o.tracking_number or f"ORD-{o.id}")
 
     # Update Locker Weight & Status
     if target_locker:
-        actual_w = order.actual_weight or 0
-        target_locker.current_weight = max(0, target_locker.current_weight - actual_w)
-        # Check if other stored parcels remain in locker
+        target_locker.current_weight = max(0, target_locker.current_weight - total_collected_weight)
+        collected_ids = {o.id for o in collected_orders}
         other_parcels = (
             db.query(Order)
-            .filter(Order.locker_id == target_locker.id, Order.status == OrderStatus.STORED, Order.id != order.id)
+            .filter(
+                Order.locker_id == target_locker.id,
+                Order.status == OrderStatus.STORED,
+                ~Order.id.in_(collected_ids),
+            )
             .count()
         )
         if other_parcels == 0:
@@ -287,11 +358,12 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
             target_locker.current_weight = 0
 
     # Log action
+    tracking_summary = ", ".join(collected_tracking_list)
     log_entry = AccessLog(
         locker_id=target_locker.id if target_locker else None,
         order_id=order.id,
         action=AccessAction.COLLECTED.value,
-        details=f"Order #{order.id} ({order.tracking_number}) collected from Locker #{locker_num}",
+        details=f"Collected {len(collected_orders)} parcel(s) [{tracking_summary}] from Locker #{locker_num}",
     )
     db.add(log_entry)
     db.commit()
@@ -300,13 +372,19 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
     chat_id = (order.user.telegram_chat_id if order.user else None) or settings.TELEGRAM_DEFAULT_CHAT_ID
     notifier.notify_parcel_collected(
         chat_id=chat_id,
-        tracking_number=order.tracking_number or f"ORD-{order.id}",
+        tracking_number=tracking_summary,
         locker_number=locker_num,
+    )
+
+    msg = (
+        f"Mã chính xác. Đang mở ngăn số {locker_num} ({len(collected_orders)} kiện hàng)."
+        if len(collected_orders) > 1
+        else f"Mã chính xác. Đang mở ngăn số {locker_num}."
     )
 
     return OtpVerificationResponse(
         valid=True,
         locker_number=locker_num,
         order_id=order.id,
-        message=f"Mã chính xác. Đang mở ngăn số {locker_num}.",
+        message=msg,
     )

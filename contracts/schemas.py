@@ -8,6 +8,11 @@ from typing import Optional, Any, Union, List, Dict
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
+class UserRole(str, Enum):
+    USER = "USER"
+    ADMIN = "ADMIN"
+
+
 class LockerStatus(str, Enum):
     EMPTY = "EMPTY"
     OCCUPIED = "OCCUPIED"
@@ -268,6 +273,8 @@ class UserCreateRequest(BaseModel):
     full_name: str
     phone: str
     telegram_chat_id: Optional[int] = None
+    password: Optional[str] = "123456"
+    role: UserRole = UserRole.USER
 
 
 class UserResponse(BaseModel):
@@ -275,10 +282,67 @@ class UserResponse(BaseModel):
     full_name: str
     phone: str
     phone_last4: str
+    role: UserRole = UserRole.USER
     telegram_chat_id: Optional[int] = None
+    face_auth_enabled: bool = False
+    face_registered: bool = False
+    face_angles_enrolled: List[str] = Field(default_factory=list)
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LoginRequest(BaseModel):
+    """Credentials for User or Admin web login."""
+    phone: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Authentication response with session token and role-based redirect."""
+    success: bool
+    token: str
+    user: UserResponse
+    redirect_url: str
+
+
+class FaceToggleRequest(BaseModel):
+    """Enable or disable facial authentication for a user."""
+    user_id: int
+    enabled: bool
+
+
+class FaceEnrollMultiAngleRequest(BaseModel):
+    """Multi-angle (5 angles) facial enrollment payload."""
+    user_id: int
+    angles: Dict[str, str] = Field(
+        ...,
+        description="Mapping of angle key ('front', 'left', 'right', 'up', 'down') to base64 image data",
+    )
+
+
+class FaceEnrollResponse(BaseModel):
+    """Status response after enrolling or toggling facial authentication."""
+    success: bool
+    user_id: int
+    face_auth_enabled: bool
+    face_registered: bool
+    enrolled_angles: List[str] = Field(default_factory=list)
+    message: str
+
+
+class UserNotificationItem(BaseModel):
+    """Notification item for delivered/stored orders with OTP details."""
+    order_id: int
+    tracking_number: str
+    order_code: Optional[str] = None
+    locker_number: Optional[int] = None
+    otp_code: Optional[str] = None
+    status: OrderStatus
+    delivered_at: Optional[datetime] = None
+    collected_at: Optional[datetime] = None
+    shared_locker_count: int = 1
+    message: str
 
 
 class OrderResponse(BaseModel):
