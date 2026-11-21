@@ -65,9 +65,10 @@ def verify_package(req: PackageVerificationRequest, db: Session = Depends(get_db
             .first()
         )
 
-    # Step 3: Check locker capacity with Same-User Co-location (Multi-Parcel Batching)
+    # Step 3: Check locker availability with Same-User Co-location & HC-SR04 clearance
     available_locker = None
     if order:
+        min_free_cm = 8.0
         # Priority 1: Reuse an existing locker already holding STORED (or reserved) parcel(s) of the SAME user
         same_user_lockers = (
             db.query(Locker)
@@ -77,12 +78,14 @@ def verify_package(req: PackageVerificationRequest, db: Session = Depends(get_db
                 Order.id != order.id,
                 Order.status.in_([OrderStatus.STORED, OrderStatus.REGISTERED]),
                 Locker.status != LockerStatus.MAINTENANCE,
-                Locker.current_weight + req.ocr_weight <= Locker.max_weight,
             )
             .order_by(Locker.locker_number.asc())
             .all()
         )
         for candidate in same_user_lockers:
+            # Ensure locker still has physical clearance (HC-SR04) if measured
+            if candidate.current_distance_cm is not None and candidate.current_distance_cm < min_free_cm:
+                continue
             # Ensure no other user owns an active order in this locker
             other_user_order = (
                 db.query(Order)
@@ -101,10 +104,7 @@ def verify_package(req: PackageVerificationRequest, db: Session = Depends(get_db
         if not available_locker:
             empty_lockers = (
                 db.query(Locker)
-                .filter(
-                    Locker.status == LockerStatus.EMPTY,
-                    Locker.current_weight + req.ocr_weight <= Locker.max_weight,
-                )
+                .filter(Locker.status == LockerStatus.EMPTY)
                 .order_by(Locker.locker_number.asc())
                 .all()
             )

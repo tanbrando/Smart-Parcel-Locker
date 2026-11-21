@@ -151,6 +151,8 @@ class LockerStateMachine:
             order_id=order_id_int,
             locker_number=locker_id,
             delta_weight=0,
+            distance_cm=occupancy.distance_cm,
+            empty_distance_cm=occupancy.baseline_cm,
         )
 
         if confirm_res.success:
@@ -165,7 +167,11 @@ class LockerStateMachine:
         self.transition_to(SystemState.IDLE)
         return confirm_res.success
 
-    def handle_recipient_pickup(self, otp_input: Optional[str] = None) -> bool:
+    def handle_recipient_pickup(
+        self,
+        otp_input: Optional[str] = None,
+        initial_digit: Optional[str] = None,
+    ) -> bool:
         """Executes recipient OTP collection workflow."""
         if self.keypad.is_locked_out():
             remain = self.keypad.get_remaining_lockout_seconds()
@@ -176,7 +182,11 @@ class LockerStateMachine:
         self.transition_to(SystemState.KEYPAD_INPUT)
         self.indicators.display_message("Enter 6-digit OTP", "Press # to enter")
 
-        pin = self.keypad.get_pin_input(timeout=20.0, mock_input=otp_input)
+        pin = self.keypad.get_pin_input(
+            timeout=20.0,
+            mock_input=otp_input,
+            initial_digits=initial_digit or "",
+        )
         if not pin:
             self.indicators.display_message("Timeout", "Returning to home")
             time.sleep(1.5)

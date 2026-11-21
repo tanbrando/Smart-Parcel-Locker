@@ -48,6 +48,7 @@ class KeypadReader:
             self._setup_hardware()
 
     def _setup_hardware(self):
+        GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
         for row in KEYPAD_ROW_PINS:
             GPIO.setup(row, GPIO.OUT)
@@ -99,9 +100,11 @@ class KeypadReader:
         timeout: float = 30.0,
         max_digits: int = 6,
         mock_input: Optional[str] = None,
+        initial_digits: str = "",
     ) -> Optional[str]:
         """
         Reads user input until '#' is pressed or `max_digits` is reached.
+        Preserves any `initial_digits` captured from the idle key scan.
         Returns the entered string, or None on timeout/lockout.
         """
         if self.is_locked_out():
@@ -112,9 +115,13 @@ class KeypadReader:
             if mock_input:
                 logger.info("[Mock Keypad] Received mock PIN input: %s", mock_input)
                 return mock_input
+            if initial_digits:
+                return initial_digits
             return "582194"
 
-        buffer: List[str] = []
+        buffer: List[str] = [ch for ch in initial_digits if ch.isdigit()][:max_digits]
+        if len(buffer) >= max_digits:
+            return "".join(buffer)
         start_time = time.time()
 
         while (time.time() - start_time) < timeout:

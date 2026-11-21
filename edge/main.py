@@ -105,7 +105,7 @@ def main():
                     fsm.reset_to_idle()
                 elif key == "#" or (key and key.isdigit()):
                     logger.info("Phím '%s' được nhấn -> Bắt đầu quy trình Nhận hàng (Recipient Pickup)...", key)
-                    fsm.handle_recipient_pickup()
+                    fsm.handle_recipient_pickup(initial_digit=key if key.isdigit() else None)
                     fsm.reset_to_idle()
                 time.sleep(0.08)
             except (KeyboardInterrupt, SystemExit):

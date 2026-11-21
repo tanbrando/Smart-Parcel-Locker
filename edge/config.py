@@ -70,48 +70,85 @@ DOOR_UNLOCK_DURATION_SEC: float = 4.0   # Duration to keep unlocked before retur
 
 # Door Reed Switch / Limit Switch Sensor (Door closed detection)
 # Active LOW: Grounded when magnet contacts switch (door closed)
+# Set ENABLE_DOOR_SWITCH=false if your physical enclosure does not have magnetic reed switches wired yet.
+ENABLE_DOOR_SWITCH: bool = os.getenv("ENABLE_DOOR_SWITCH", "true").lower() in ("true", "1", "yes")
 DOOR_SWITCH_PINS: Dict[int, int] = {
-    1: 23,  # Locker 1 Reed Switch
-    2: 24,  # Locker 2 Reed Switch
-    3: 25,  # Locker 3 Reed Switch
-    4: 7,   # Locker 4 Reed Switch
+    1: 7,   # Locker 1 Reed Switch
+    2: 8,   # Locker 2 Reed Switch
+    3: 9,   # Locker 3 Reed Switch
+    4: 11,  # Locker 4 Reed Switch
 }
 DOOR_SWITCH_CLOSED_ACTIVE_LOW: bool = True
 
 # Ultrasonic Distance Sensor (HC-SR04 / JSN-SR04T)
-# TRIG: Output 10us trigger pulse
-# ECHO: Input pulse width (CAUTION: 5V output from HC-SR04 must use voltage divider before Pi GPIO!)
+# Shared TRIG (GPIO 5) across all 4 compartments (measured sequentially), dedicated ECHO per locker.
+# CAUTION: 5V output from HC-SR04 ECHO must use a 1k/2k voltage divider before Pi 3.3V GPIO!
 ULTRASONIC_TRIG_PINS: Dict[int, int] = {
-    1: 5,   # Locker 1 Ultrasonic TRIG
-    2: 19,  # Locker 2 Ultrasonic TRIG
-    3: 13,  # Locker 3 Ultrasonic TRIG
-    4: 8,   # Locker 4 Ultrasonic TRIG
+    1: 5,   # Shared Ultrasonic TRIG
+    2: 5,   # Shared Ultrasonic TRIG
+    3: 5,   # Shared Ultrasonic TRIG
+    4: 5,   # Shared Ultrasonic TRIG
 }
 ULTRASONIC_ECHO_PINS: Dict[int, int] = {
     1: 6,   # Locker 1 Ultrasonic ECHO
-    2: 20,  # Locker 2 Ultrasonic ECHO
-    3: 16,  # Locker 3 Ultrasonic ECHO
-    4: 9,   # Locker 4 Ultrasonic ECHO
+    2: 13,  # Locker 2 Ultrasonic ECHO
+    3: 19,  # Locker 3 Ultrasonic ECHO
+    4: 26,  # Locker 4 Ultrasonic ECHO
 }
 
 # Ultrasonic calibration and threshold (cm)
 BASELINE_EMPTY_CM: float = float(os.getenv("BASELINE_EMPTY_CM", "35.0"))  # Empty locker height
 OCCUPIED_MARGIN_CM: float = float(os.getenv("OCCUPIED_MARGIN_CM", "5.0"))  # Margin to trigger occupied
+MIN_FREE_DISTANCE_CM: float = float(os.getenv("MIN_FREE_DISTANCE_CM", "8.0"))  # Min clearance to allow batching
 ULTRASONIC_TIMEOUT_SEC: float = 0.03  # Max echo timeout (~5 meters roundtrip)
 ULTRASONIC_SAMPLE_COUNT: int = 5      # Number of samples for median filter
 ULTRASONIC_DEBOUNCE_COUNT: int = 3    # Consecutive stable readings required for decision
 
-# 4x4 Matrix Keypad Pinout
+# 4x4 Matrix Keypad Pinout (Conflict-free with Servos, HC-SR04, Door Switches, Buzzer & I2C)
 KEYPAD_ROW_PINS: List[int] = [18, 23, 24, 25]  # R1, R2, R3, R4
 KEYPAD_COL_PINS: List[int] = [12, 16, 20, 21]  # C1, C2, C3, C4
 KEYPAD_MAX_ATTEMPTS: int = 3
 KEYPAD_LOCKOUT_SECONDS: int = 60
 
-# Indicators: LCD 1602 (I2C) & Buzzer
+# Indicators: LCD 1602 (I2C on GPIO 2/3) & Buzzer
 LCD_I2C_ADDR: int = 0x27
 LCD_I2C_BUS: int = 1
 LCD_COLS: int = 16
 LCD_ROWS: int = 2
 
-BUZZER_PIN: int = 26
+BUZZER_PIN: int = 10
 BUZZER_ACTIVE_HIGH: bool = True
+
+
+def validate_gpio_pinout() -> List[str]:
+    """
+    Validates that no BCM GPIO pins conflict across peripherals on Raspberry Pi 4B.
+    Shared TRIG across ultrasonic sensors is explicitly allowed.
+    Returns a list of conflict descriptions (empty list means valid).
+    """
+    pin_owners: Dict[int, str] = {
+        2: "I2C_SDA",
+        3: "I2C_SCL",
+    }
+    conflicts: List[str] = []
+
+    def _claim(pin: int, owner: str):
+        if pin in pin_owners:
+            conflicts.append(f"GPIO {pin} conflict: {pin_owners[pin]} vs {owner}")
+        else:
+            pin_owners[pin] = owner
+
+    for locker_id, pin in LOCKER_SERVO_PINS.items():
+        _claim(pin, f"SERVO_{locker_id}")
+    for pin in set(ULTRASONIC_TRIG_PINS.values()):
+        _claim(pin, "ULTRASONIC_TRIG")
+    for locker_id, pin in ULTRASONIC_ECHO_PINS.items():
+        _claim(pin, f"ULTRASONIC_ECHO_{locker_id}")
+    for locker_id, pin in DOOR_SWITCH_PINS.items():
+        _claim(pin, f"DOOR_SWITCH_{locker_id}")
+    for idx, pin in enumerate(KEYPAD_ROW_PINS, 1):
+        _claim(pin, f"KEYPAD_ROW_{idx}")
+    for idx, pin in enumerate(KEYPAD_COL_PINS, 1):
+        _claim(pin, f"KEYPAD_COL_{idx}")
+    _claim(BUZZER_PIN, "BUZZER")
+    return conflicts

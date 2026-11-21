@@ -144,6 +144,59 @@ def test_four_lockers_supported():
     assert sensor.is_locker_occupied(locker_id=4).occupied is True
 
 
+def test_no_gpio_pin_conflicts():
+    """Ensures Raspberry Pi 4B GPIO pinout has zero conflicts across all peripherals."""
+    from edge.config import validate_gpio_pinout
+
+    conflicts = validate_gpio_pinout()
+    assert conflicts == [], f"GPIO pin conflicts detected: {conflicts}"
+
+
+def test_fsm_sends_ultrasonic_distance_to_server():
+    """Ensures FSM passes real HC-SR04 distance_cm and empty_distance_cm to confirm_deposit."""
+    from unittest.mock import MagicMock, patch
+    from contracts.schemas import DepositConfirmationResponse, LockerAuth, OrderStatus
+    from edge.core.api_client import EdgeApiClient
+    from edge.core.fsm import LockerStateMachine
+
+    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=5.0)
+    sensor.set_mock_distance(13.5, locker_id=2)
+    lock = ServoLockController(mock_mode=True)
+    lock.set_mock_door_closed(True, locker_id=2)
+
+    mock_api = MagicMock(spec=EdgeApiClient)
+    mock_api.request_door_unlock.return_value = LockerAuth(is_allowed=True, locker_id=2, order_id=99)
+    mock_api.confirm_deposit.return_value = DepositConfirmationResponse(
+        success=True,
+        status=OrderStatus.STORED,
+        otp_generated="123456",
+        distance_cm=13.5,
+        parcel_detected=True,
+    )
+
+    fsm = LockerStateMachine(ultrasonic=sensor, lock=lock, api_client=mock_api)
+    with patch("time.sleep", return_value=None):
+        assert fsm.handle_courier_deposit() is True
+
+    mock_api.confirm_deposit.assert_called_once_with(
+        order_id=99,
+        locker_number=2,
+        delta_weight=0,
+        distance_cm=13.5,
+        empty_distance_cm=35.0,
+    )
+
+
+def test_keypad_preserves_initial_digit():
+    """Ensures pressing the first OTP digit from IDLE does not drop that digit."""
+    from edge.core.keypad import KeypadReader
+
+    keypad = KeypadReader(mock_mode=True)
+    assert keypad.get_pin_input(initial_digits="5") == "5"
+    assert keypad.get_pin_input(mock_input="582194", initial_digits="5") == "582194"
+
+
+
 if __name__ == "__main__":
     tests = [
         test_ultrasonic_mock_distance_and_filtering,
