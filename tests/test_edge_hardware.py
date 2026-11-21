@@ -127,6 +127,23 @@ def test_module_level_convenience_functions():
     assert occ.occupied is True
 
 
+def test_four_lockers_supported():
+    lock = ServoLockController(mock_mode=True)
+    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=5.0)
+    assert sorted(lock.servo_pins.keys()) == [1, 2, 3, 4]
+    assert sorted(lock.door_switch_pins.keys()) == [1, 2, 3, 4]
+    assert sorted(sensor.trig_pins.keys()) == [1, 2, 3, 4]
+    assert sorted(sensor.echo_pins.keys()) == [1, 2, 3, 4]
+
+    # Verify locker 4 works end-to-end
+    assert lock.unlock_door(4) is True
+    assert lock.get_lock_state(4) == LockState.UNLOCKED
+    assert lock.lock_door(4) is True
+    assert lock.get_lock_state(4) == LockState.LOCKED
+    sensor.set_mock_distance(15.0, locker_id=4)
+    assert sensor.is_locker_occupied(locker_id=4).occupied is True
+
+
 if __name__ == "__main__":
     tests = [
         test_ultrasonic_mock_distance_and_filtering,
@@ -135,6 +152,7 @@ if __name__ == "__main__":
         test_servo_lock_state_transitions,
         test_lock_if_occupied_logic,
         test_module_level_convenience_functions,
+        test_four_lockers_supported,
     ]
     print(f"Running {len(tests)} Ultrasonic & Servo Hardware tests...\n")
     for t in tests:

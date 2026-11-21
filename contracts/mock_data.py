@@ -121,6 +121,14 @@ MOCK_LOCKERS = [
         max_weight=5000,
         updated_at=datetime.now(timezone.utc),
     ),
+    LockerInfo(
+        id=4,
+        locker_number=4,
+        status=LockerStatus.EMPTY,
+        current_weight=0,
+        max_weight=5000,
+        updated_at=datetime.now(timezone.utc),
+    ),
 ]
 
 MOCK_ORDERS = [

@@ -15,10 +15,7 @@ from edge.hardware.servo_lock import (
     open_locker_door,
 )
 from edge.hardware.indicators import IndicatorController
-
-# Backward compatibility alias for earlier contracts
 from edge.hardware.lock_controller import LockController
-from edge.hardware.hx711_loadcell import LoadCellController, measure_weight_delta
 
 __all__ = [
     # Ultrasonic sensor
@@ -37,9 +34,6 @@ __all__ = [
     "open_locker_door",
     # Indicators
     "IndicatorController",
-    # Backward compatibility
-    "LoadCellController",
-    "measure_weight_delta",
 ]
 
 

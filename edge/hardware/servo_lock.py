@@ -104,6 +104,23 @@ class ServoLockController:
             return val == 0
         return val == 1
 
+    def wait_for_door_closed(
+        self,
+        locker_id: int = 1,
+        timeout_seconds: float = 30.0,
+        poll_interval: float = 0.2,
+    ) -> bool:
+        """Polls reed/limit switch until door is closed or timeout expires."""
+        if self.mock_mode:
+            return self.is_door_closed(locker_id)
+
+        deadline = time.time() + max(0.1, timeout_seconds)
+        while time.time() < deadline:
+            if self.is_door_closed(locker_id):
+                return True
+            time.sleep(poll_interval)
+        return self.is_door_closed(locker_id)
+
     def _rotate_servo(self, locker_id: int, angle: float, settle_time: float = 0.4):
         """Rotates servo to target angle and detaches PWM pulse to prevent jitter."""
         if locker_id not in self.servo_pins:

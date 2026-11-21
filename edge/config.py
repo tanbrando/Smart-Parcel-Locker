@@ -57,6 +57,7 @@ LOCKER_SERVO_PINS: Dict[int, int] = {
     1: 17,  # Locker 1 Servo Signal Pin
     2: 27,  # Locker 2 Servo Signal Pin
     3: 22,  # Locker 3 Servo Signal Pin
+    4: 4,   # Locker 4 Servo Signal Pin
 }
 # Backward compatibility alias
 LOCKER_RELAY_PINS = LOCKER_SERVO_PINS
@@ -73,6 +74,7 @@ DOOR_SWITCH_PINS: Dict[int, int] = {
     1: 23,  # Locker 1 Reed Switch
     2: 24,  # Locker 2 Reed Switch
     3: 25,  # Locker 3 Reed Switch
+    4: 7,   # Locker 4 Reed Switch
 }
 DOOR_SWITCH_CLOSED_ACTIVE_LOW: bool = True
 
@@ -83,11 +85,13 @@ ULTRASONIC_TRIG_PINS: Dict[int, int] = {
     1: 5,   # Locker 1 Ultrasonic TRIG
     2: 19,  # Locker 2 Ultrasonic TRIG
     3: 13,  # Locker 3 Ultrasonic TRIG
+    4: 8,   # Locker 4 Ultrasonic TRIG
 }
 ULTRASONIC_ECHO_PINS: Dict[int, int] = {
     1: 6,   # Locker 1 Ultrasonic ECHO
     2: 20,  # Locker 2 Ultrasonic ECHO
     3: 16,  # Locker 3 Ultrasonic ECHO
+    4: 9,   # Locker 4 Ultrasonic ECHO
 }
 
 # Ultrasonic calibration and threshold (cm)
@@ -96,16 +100,6 @@ OCCUPIED_MARGIN_CM: float = float(os.getenv("OCCUPIED_MARGIN_CM", "5.0"))  # Mar
 ULTRASONIC_TIMEOUT_SEC: float = 0.03  # Max echo timeout (~5 meters roundtrip)
 ULTRASONIC_SAMPLE_COUNT: int = 5      # Number of samples for median filter
 ULTRASONIC_DEBOUNCE_COUNT: int = 3    # Consecutive stable readings required for decision
-
-
-
-# Load Cell HX711 Pinout
-HX711_DT_PIN: int = 5
-HX711_SCK_PIN: int = 6
-LOADCELL_CALIBRATION_FACTOR: float = 420.0  # Sensor-specific calibration scale
-WEIGHT_TOLERANCE_GRAMS: float = 150.0       # Max deviation between declared & measured
-STRICT_WEIGHT_MATCH: bool = os.getenv("STRICT_WEIGHT_MATCH", "false").lower() in ("true", "1", "yes")
-WEIGH_STABILIZATION_TIME_SEC: float = 3.0
 
 # 4x4 Matrix Keypad Pinout
 KEYPAD_ROW_PINS: List[int] = [18, 23, 24, 25]  # R1, R2, R3, R4

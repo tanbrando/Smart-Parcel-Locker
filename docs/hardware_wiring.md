@@ -13,13 +13,16 @@ Tất cả chân GPIO được cấu hình tập trung trong file [edge/config.p
 | **Servo Ngăn 1 (SG90/MG996R)** | `PWM Signal` (Vàng/Cam) | **GPIO 17** (Pin 11) | Tần số 50Hz. $0^\circ$ = Khóa, $90^\circ$ = Mở. |
 | **Servo Ngăn 2** | `PWM Signal` | **GPIO 27** (Pin 13) | Tần số 50Hz |
 | **Servo Ngăn 3** | `PWM Signal` | **GPIO 22** (Pin 15) | Tần số 50Hz |
+| **Servo Ngăn 4** | `PWM Signal` | **GPIO 4** (Pin 7) | Tần số 50Hz |
 | **Công tắc từ cửa (Reed switch) 1** | `DOOR_SWITCH` | **GPIO 23** (Pin 16) | Nối GND khi cửa đóng (`PULL-UP` nội bộ kích hoạt) |
 | **Công tắc từ cửa 2** | `DOOR_SWITCH` | **GPIO 24** (Pin 18) | Nối GND khi cửa đóng |
 | **Công tắc từ cửa 3** | `DOOR_SWITCH` | **GPIO 25** (Pin 22) | Nối GND khi cửa đóng |
+| **Công tắc từ cửa 4** | `DOOR_SWITCH` | **GPIO 7** (Pin 26) | Nối GND khi cửa đóng |
 | **Siêu âm 1 (HC-SR04)** | `TRIG` | **GPIO 5** (Pin 29) | Xung 10µs kích sóng siêu âm |
 | **Siêu âm 1 (HC-SR04)** | `ECHO` | **GPIO 6** (Pin 31) | **Bắt buộc dùng cầu chia áp 5V -> 3.3V** |
 | **Siêu âm 2** | `TRIG` / `ECHO` | **GPIO 19** / **GPIO 20** | Cầu chia áp cho ECHO |
 | **Siêu âm 3** | `TRIG` / `ECHO` | **GPIO 13** / **GPIO 16** | Cầu chia áp cho ECHO |
+| **Siêu âm 4** | `TRIG` / `ECHO` | **GPIO 8** / **GPIO 9** | Cầu chia áp cho ECHO |
 | **Màn hình LCD 1602 I2C** | `SDA` / `SCL` | **GPIO 2** (Pin 3) / **GPIO 3** (Pin 5) | Địa chỉ I2C: `0x27` (Bus 1) |
 | **Còi Buzzer** | `I/O (+)` | **GPIO 26** (Pin 37) | Bíp báo trạng thái / Báo động |
 
