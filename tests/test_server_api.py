@@ -446,14 +446,19 @@ def test_auth_login_user_and_admin(db_session):
     assert exc.value.status_code == 401
 
 
-def test_face_auth_toggle_and_multi_angle_enrollment(db_session):
+def test_face_auth_toggle_and_multi_angle_enrollment(db_session, monkeypatch):
     from fastapi import HTTPException
     from contracts.schemas import FaceToggleRequest, FaceEnrollMultiAngleRequest
     from server.routers import auth
+    from server.core.security import create_session_token
+    import numpy as np
+
+    authorization = "Bearer " + create_session_token(1, "USER")
 
     # Cannot enable Face ID before enrolling 5 angles
     with pytest.raises(HTTPException) as exc_before:
-        auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session)
+        auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session,
+                              authorization=authorization)
     assert exc_before.value.status_code == 400
 
     # Incomplete angles rejected
@@ -461,6 +466,7 @@ def test_face_auth_toggle_and_multi_angle_enrollment(db_session):
         auth.enroll_face_multi_angle(
             FaceEnrollMultiAngleRequest(user_id=1, angles={"front": "data:image/jpeg;base64,abc"}),
             db=db_session,
+            authorization=authorization,
         )
     assert exc_partial.value.status_code == 400
 
@@ -472,9 +478,12 @@ def test_face_auth_toggle_and_multi_angle_enrollment(db_session):
         "up": "data:image/jpeg;base64,up_img",
         "down": "data:image/jpeg;base64,down_img",
     }
+    template = np.eye(128, dtype=np.float32)[0]
+    monkeypatch.setattr(auth, "extract_templates", lambda angles: ("model", dict.fromkeys(angles, template)))
     enroll_res = auth.enroll_face_multi_angle(
         FaceEnrollMultiAngleRequest(user_id=1, angles=five_angles),
         db=db_session,
+        authorization=authorization,
     )
     assert enroll_res.success is True
     assert enroll_res.face_registered is True
@@ -482,10 +491,36 @@ def test_face_auth_toggle_and_multi_angle_enrollment(db_session):
     assert set(enroll_res.enrolled_angles) == set(five_angles.keys())
 
     # Toggle off and back on
-    off_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=False), db=db_session)
+    off_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=False), db=db_session,
+                                   authorization=authorization)
     assert off_res.face_auth_enabled is False
-    on_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session)
+    on_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session,
+                                  authorization=authorization)
     assert on_res.face_auth_enabled is True
+
+    from server.routers import edge
+
+    db_session.add(Order(user_id=1, locker_id=1, tracking_number="FACE-PICKUP-001",
+                         status=OrderStatus.STORED))
+    db_session.commit()
+    monkeypatch.setenv("FACE_DEVICE_KEY", "test-device")
+    monkeypatch.setattr(edge.notifier, "notify_parcel_collected", lambda **kwargs: None)
+    pickup = FaceEnrollMultiAngleRequest(user_id=1, angles=five_angles)
+    with pytest.raises(HTTPException) as unauthorized:
+        edge.verify_face(pickup, db=db_session, device_key="wrong")
+    assert unauthorized.value.status_code == 403
+
+    wrong = np.eye(128, dtype=np.float32)[1]
+    probes = dict.fromkeys(five_angles, template)
+    monkeypatch.setattr(edge, "extract_templates", lambda _: ("model", probes))
+    probes["down"] = wrong
+    assert not edge.verify_face(pickup, db=db_session, device_key="test-device").valid
+    assert db_session.query(Order).filter_by(tracking_number="FACE-PICKUP-001").one().status == OrderStatus.STORED
+
+    probes["down"] = template
+    result = edge.verify_face(pickup, db=db_session, device_key="test-device")
+    assert result.valid and result.locker_number == 1
+    assert not edge.verify_face(pickup, db=db_session, device_key="test-device").valid
 
 
 def test_modular_web_portal_and_login_assets():

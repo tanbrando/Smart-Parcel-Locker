@@ -168,12 +168,15 @@ class PackageScanner:
         1. Uses pyzbar to decode QR Code / Barcode for the tracking number.
         2. Uses PaddleOCR to read the parcel weight (e.g., 'Khối lượng tối đa: 2,667g') from the label text.
         """
+        return self._decode_waybill(frame, run_ocr_for_weight)
+
+    def _decode_waybill(self, frame, run_ocr_for_weight, decoded_objects=None) -> ScanResult:
         tracking_number: Optional[str] = None
         barcode_type: Optional[str] = None
         raw_barcode_data: str = ""
 
-        # Step 1: Decode Barcode / QR Code with pyzbar
-        decoded_objects = pyzbar.decode(frame)
+        if decoded_objects is None:
+            decoded_objects = pyzbar.decode(frame)
         if not decoded_objects:
             # Try preprocessing (grayscale + upscale) if barcode/QR is small
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -196,12 +199,13 @@ class PackageScanner:
         declared_weight = extract_weight_grams(raw_barcode_data)
         raw_text_lines = [raw_barcode_data] if raw_barcode_data else []
 
-        if run_ocr_for_weight and declared_weight is None:
+        if run_ocr_for_weight and (declared_weight is None or not tracking_number):
             try:
                 ocr_lines = run_ocr_lines(frame)
                 raw_text_lines.extend(ocr_lines)
                 full_ocr_text = "\n".join(ocr_lines)
-                declared_weight = extract_weight_grams(full_ocr_text)
+                if declared_weight is None:
+                    declared_weight = extract_weight_grams(full_ocr_text)
                 if not tracking_number:
                     tracking_number = extract_tracking_number(full_ocr_text)
             except Exception as exc:
@@ -243,7 +247,8 @@ class PackageScanner:
         Main scanning entrypoint:
         - If mode == 'test' (or image_path is provided): reads from static image file.
         - If mode == 'raspberry' / 'live': captures frames from Raspberry Pi CSI / USB camera
-          until a valid QR/Barcode is decoded by pyzbar, then extracts weight via OCR.
+          until a valid QR/barcode is decoded. If capture times out, run one final
+          scaled decode and OCR pass on the last frame.
         """
         if image_path is not None or self.mode == "test":
             if self.mock_mode and image_path is None:
@@ -259,23 +264,32 @@ class PackageScanner:
                 return self.scan_from_image(self.test_image_path)
             return MOCK_SCAN_VALID_SPX
 
-        start_time = time.time()
+        deadline = time.monotonic() + timeout
+        last_frame = None
         try:
-            while (time.time() - start_time) < timeout:
+            while time.monotonic() < deadline:
                 frame = self._read_camera_frame()
                 if frame is None:
                     time.sleep(0.05)
                     continue
 
+                last_frame = frame
                 # Fast check with pyzbar on each camera frame
                 decoded_objects = pyzbar.decode(frame)
                 if decoded_objects:
-                    # Once barcode/QR is found, run full decode + OCR weight on that frame
-                    return self.decode_waybill_frame(frame, run_ocr_for_weight=True)
+                    result = self._decode_waybill(frame, True, decoded_objects)
+                    if result.tracking_number:
+                        return result
 
                 time.sleep(0.05)
         finally:
             self._release_camera()
+
+        # One recovery pass after capture: scaled barcode decode and text OCR.
+        if last_frame is not None:
+            result = self._decode_waybill(last_frame, True, [])
+            if result.tracking_number:
+                return result
 
         logger.warning("Scanning timed out after %.1fs without finding a valid code.", timeout)
         return ScanResult(

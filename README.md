@@ -125,3 +125,67 @@ pytest tests/
 6. Server marks Order DEPOSITED -> Generates 6-digit OTP -> Sends Telegram notification with OTP to Recipient.
 7. Recipient arrives -> Inputs OTP via 4x4 Keypad -> Edge verifies OTP with Server -> Locker door pops open.
 ```
+
+## Thử nghiệm xác minh khuôn mặt trên edge
+
+### Nhận hàng bằng Face ID tại tủ
+
+Đặt `FACE_YUNET` và `FACE_SFACE` thành đường dẫn tệp ONNX trên cả máy chủ
+và Pi. Đặt cùng một khóa bí mật `FACE_DEVICE_KEY` trong môi trường máy chủ
+và Pi. Dùng HTTPS với chứng chỉ được Pi tin cậy khi truyền ảnh và khóa qua mạng.
+
+Đăng nhập `/portal`, chụp đủ năm tư thế và bấm **Lưu Face ID** để tạo hồ sơ
+SFace theo tài khoản. Hồ sơ web từng lưu ảnh xem trước cần đăng ký lại.
+Tại tủ, nhấn **D**, nhập mã tài khoản hiển thị trong mục Face ID, rồi nhấn
+**#**. Làm theo năm hướng dẫn trên màn hình. Máy chủ chỉ cho mở một ngăn
+chứa kiện của tài khoản khi cả năm ảnh khớp. Phím **#** từ màn hình chờ
+vẫn mở luồng OTP.
+
+### Demo độc lập bằng CLI
+
+Công cụ edge bên dưới dùng hồ sơ SQLite chỉ định bằng `--db`.
+
+Chạy từ thư mục gốc của repo với môi trường đã cài các thư viện edge. Tải
+`face_detection_yunet_2023mar.onnx` và `face_recognition_sface_2021dec.onnx`
+từ [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
+và [SFace](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface).
+Dùng webcam USB qua OpenCV và đặt cơ sở dữ liệu trong thư mục riêng ngoài repo.
+
+```sh
+python -m edge.cv.face_verify enroll user-123 --yunet /path/yunet.onnx --sface /path/sface.onnx --db /private/faces.sqlite3
+python -m edge.cv.face_verify verify user-123 --yunet /path/yunet.onnx --sface /path/sface.onnx --db /private/faces.sqlite3
+python -m edge.cv.face_verify adapt user-123 --yunet /path/yunet.onnx --sface /path/sface.onnx --db /private/faces.sqlite3
+```
+
+Trên máy có giao diện đồ họa, thêm `--preview` vào lệnh để xem webcam,
+hướng dẫn và tiến độ từng góc. Cửa sổ cần bản `opencv-python` có hỗ trợ
+HighGUI. Nếu môi trường dùng `opencv-python-headless`, hãy dùng môi trường
+demo riêng với `opencv-python` để tránh trùng module `cv2`.
+Nhấn Esc hoặc Q để hủy.
+
+Lệnh đăng ký hướng dẫn nhìn thẳng, quay trái, quay phải, ngẩng nhẹ và cúi nhẹ. Mỗi góc cần ba
+khung hình nhất quán. Chương trình sàng lọc theo số mặt, kích thước, độ sáng và
+độ nét, sau đó lưu vector SFace. SQLite lưu vector dạng JSON và cần được bảo
+vệ bằng quyền truy cập hệ điều hành. Lệnh xác minh so sánh 1:1 theo ID đã khai báo.
+Chạy lại `enroll` với cùng ID để nâng cấp hồ sơ ba góc. Khi chạy `verify`,
+mỗi bước chỉ lấy một ảnh đúng tư thế và chuyển tiếp sau khi ảnh khớp mẫu
+cùng góc. Trên Pi dùng camera CSI, thêm `--picamera2` khi đăng ký hoặc xác minh.
+Với ảnh chụp sẵn, thêm `--photos front.jpg left.jpg right.jpg up.jpg down.jpg`
+vào lệnh `verify` và cung cấp ảnh theo đúng thứ tự đó.
+Mã thoát 0 là đăng ký thành công hoặc khớp, 1 là không khớp, 2 là lỗi vận hành.
+
+### Thích nghi mẫu
+
+Lệnh `adapt` dành cho lượt thử do người vận hành kiểm soát. Mẫu mới phải khớp
+mẫu đăng ký của cùng góc với cosine ít nhất 0,70. Vector thích nghi nhận 10%
+trọng số từ mẫu mới và chỉ được lưu khi cosine với mẫu gốc vẫn đạt 0,90.
+Xác minh dùng cả hai vector và luôn kiểm tra mức tương đồng tối thiểu với
+mẫu gốc. Mẫu đăng ký được giữ để giới hạn trôi mẫu.
+
+Đây là CLI thử nghiệm, độc lập với luồng nhận hàng OTP. Quay đầu được dùng
+để thu tư thế. Triển khai tại tủ cần kiểm tra chống giả mạo, gắn đăng ký và cập nhật
+mẫu với danh tính đã xác thực, và bảo vệ dữ liệu sinh trắc học.
+Để đánh giá thích nghi, dùng các phiên riêng theo ngày và điều kiện ánh sáng.
+So sánh tỷ lệ nhận nhầm, từ chối nhầm và thời gian xử lý với cùng ngưỡng, trước
+và sau thích nghi. Ngưỡng trong mã là giá trị thử nghiệm. Tham khảo
+[NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html).

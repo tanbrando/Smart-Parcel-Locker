@@ -3,8 +3,11 @@ Edge Router [Person 4].
 Direct endpoints invoked by Raspberry Pi 4B Edge Controller during locker operation.
 """
 import logging
+import hmac
+import json
+import os
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -24,6 +27,8 @@ from server.core.security import generate_otp, is_otp_expired, otp_rate_limiter
 from server.db.session import get_db
 from server.db.models import Order, Locker, AccessLog, User
 from server.services.telegram import notifier
+from server.services.face import extract_templates
+from contracts.schemas import FaceEnrollMultiAngleRequest
 
 logger = logging.getLogger("server.routers.edge")
 
@@ -344,6 +349,46 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
 
     # 3. Valid OTP -> Collect all co-located parcels sharing this OTP in the target locker
     otp_rate_limiter.reset()
+    return collect_orders(order, matched_orders, db)
+
+
+@router.post("/verify-face", response_model=OtpVerificationResponse)
+def verify_face(payload: FaceEnrollMultiAngleRequest, db: Session = Depends(get_db),
+                device_key: str = Header("", alias="X-Face-Device-Key")):
+    expected_key = os.getenv("FACE_DEVICE_KEY")
+    if not expected_key or not hmac.compare_digest(device_key.encode(), expected_key.encode()):
+        raise HTTPException(status_code=403, detail="Face pickup device is not authorized.")
+    user = db.get(User, payload.user_id)
+    if not user or not user.face_auth_enabled or not user.face_registered:
+        return OtpVerificationResponse(valid=False, message="Face ID is unavailable.")
+    try:
+        model_id, probes = extract_templates(payload.angles)
+        from edge.cv.face_verify import VERIFY_SCORE, unit
+        enrolled = json.loads(user.face_data_json or "{}")
+        matched = all(
+            enrolled[pose]["model_id"] == model_id
+            and float(unit(enrolled[pose]["embedding"]) @ vector) >= VERIFY_SCORE
+            for pose, vector in probes.items()
+        )
+    except (KeyError, TypeError, ValueError):
+        matched = False
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not matched:
+        return OtpVerificationResponse(valid=False, message="Five-angle verification failed.")
+    orders = db.query(Order).filter(
+        Order.user_id == user.id, Order.status == OrderStatus.STORED, Order.locker_id.isnot(None),
+    ).order_by(Order.id).all()
+    for order in orders:
+        if order.locker and not db.query(Order).filter(
+            Order.locker_id == order.locker_id, Order.status == OrderStatus.STORED,
+            Order.user_id != user.id,
+        ).first():
+            return collect_orders(order, orders, db, verified_message="Face ID confirmed")
+    return OtpVerificationResponse(valid=False, message="No eligible parcel for Face ID pickup.")
+
+
+def collect_orders(order, matched_orders, db, verified_message="Mã chính xác"):
     target_locker = order.locker
     locker_num = target_locker.locker_number if target_locker else 1
     now_utc = datetime.now(timezone.utc)
@@ -352,6 +397,13 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
         o for o in matched_orders
         if (target_locker is None or o.locker_id == target_locker.id)
     ]
+    collected_ids = {o.id for o in collected_orders}
+    claimed = db.query(Order).filter(
+        Order.id.in_(collected_ids), Order.status == OrderStatus.STORED,
+    ).update({Order.status: OrderStatus.COLLECTED}, synchronize_session=False)
+    if claimed != len(collected_ids):
+        db.rollback()
+        return OtpVerificationResponse(valid=False, message="Parcel pickup already processed.")
     total_collected_weight = 0
     collected_tracking_list = []
 
@@ -365,7 +417,6 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
     # Update Locker Weight & Status
     if target_locker:
         target_locker.current_weight = max(0, target_locker.current_weight - total_collected_weight)
-        collected_ids = {o.id for o in collected_orders}
         other_parcels = (
             db.query(Order)
             .filter(
@@ -400,9 +451,9 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
     )
 
     msg = (
-        f"Mã chính xác. Đang mở ngăn số {locker_num} ({len(collected_orders)} kiện hàng)."
+        f"{verified_message}. Đang mở ngăn số {locker_num} ({len(collected_orders)} kiện hàng)."
         if len(collected_orders) > 1
-        else f"Mã chính xác. Đang mở ngăn số {locker_num}."
+        else f"{verified_message}. Đang mở ngăn số {locker_num}."
     )
 
     return OtpVerificationResponse(
