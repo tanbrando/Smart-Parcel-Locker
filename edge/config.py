@@ -40,6 +40,37 @@ SERVO_LOCKED_ANGLE: float = 0.0         # Angle when door is locked (0 degrees)
 SERVO_UNLOCKED_ANGLE: float = 90.0      # Angle when door is open (90 degrees)
 DOOR_UNLOCK_DURATION_SEC: float = 4.0   # Duration to keep unlocked before returning to locked
 
+# Door Reed Switch / Limit Switch Sensor (Door closed detection)
+# Active LOW: Grounded when magnet contacts switch (door closed)
+DOOR_SWITCH_PINS: Dict[int, int] = {
+    1: 23,  # Locker 1 Reed Switch
+    2: 24,  # Locker 2 Reed Switch
+    3: 25,  # Locker 3 Reed Switch
+}
+DOOR_SWITCH_CLOSED_ACTIVE_LOW: bool = True
+
+# Ultrasonic Distance Sensor (HC-SR04 / JSN-SR04T)
+# TRIG: Output 10us trigger pulse
+# ECHO: Input pulse width (CAUTION: 5V output from HC-SR04 must use voltage divider before Pi GPIO!)
+ULTRASONIC_TRIG_PINS: Dict[int, int] = {
+    1: 5,   # Locker 1 Ultrasonic TRIG
+    2: 19,  # Locker 2 Ultrasonic TRIG
+    3: 13,  # Locker 3 Ultrasonic TRIG
+}
+ULTRASONIC_ECHO_PINS: Dict[int, int] = {
+    1: 6,   # Locker 1 Ultrasonic ECHO
+    2: 20,  # Locker 2 Ultrasonic ECHO
+    3: 16,  # Locker 3 Ultrasonic ECHO
+}
+
+# Ultrasonic calibration and threshold (cm)
+BASELINE_EMPTY_CM: float = float(os.getenv("BASELINE_EMPTY_CM", "35.0"))  # Empty locker height
+OCCUPIED_MARGIN_CM: float = float(os.getenv("OCCUPIED_MARGIN_CM", "5.0"))  # Margin to trigger occupied
+ULTRASONIC_TIMEOUT_SEC: float = 0.03  # Max echo timeout (~5 meters roundtrip)
+ULTRASONIC_SAMPLE_COUNT: int = 5      # Number of samples for median filter
+ULTRASONIC_DEBOUNCE_COUNT: int = 3    # Consecutive stable readings required for decision
+
+
 
 # Load Cell HX711 Pinout
 HX711_DT_PIN: int = 5

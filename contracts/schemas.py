@@ -35,6 +35,32 @@ class SystemState(str, Enum):
 
 
 # ==========================================
+# Ultrasonic Sensor & Servo Lock Schemas
+# ==========================================
+
+class LockState(str, Enum):
+    LOCKED = "LOCKED"
+    UNLOCKED = "UNLOCKED"
+
+
+class LockDecision(str, Enum):
+    LOCKED = "LOCKED"
+    EMPTY_NOT_LOCKED = "EMPTY_NOT_LOCKED"
+    DOOR_OPEN = "DOOR_OPEN"
+
+
+class OccupancyResult(BaseModel):
+    """Result returned by Ultrasonic Sensor."""
+    occupied: bool = Field(..., description="Whether parcel is detected inside locker")
+    distance_cm: Optional[float] = Field(None, description="Measured distance in cm")
+    baseline_cm: float = Field(..., description="Calibrated empty locker distance in cm")
+    confidence: float = Field(1.0, ge=0.0, le=1.0, description="Reading stability confidence (0-1)")
+    error: Optional[str] = Field(None, description="Error message, e.g. SENSOR_TIMEOUT")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+
+# ==========================================
 # CV & Hardware Schemas (Edge)
 # ==========================================
 
