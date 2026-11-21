@@ -1,0 +1,27 @@
+# Raspberry Pi Edge configuration (copy to Smart-Parcel-Locker/edge/.env)
+
+# Replace with the API address reachable from the Pi (e.g. https://172.20.10.11:8443 or http://127.0.0.1:8000)
+SERVER_API_URL=https://<dia-chi-may-chu>:8443
+API_TIMEOUT_SECONDS=15.0
+
+# Physical Raspberry Pi with a CSI ribbon camera. For USB webcam, set USE_CSI_CAMERA=false.
+MOCK_HARDWARE=false
+CAMERA_MODE=raspberry
+USE_CSI_CAMERA=true
+CAMERA_INDEX=0
+
+# Face ID ONNX models on Pi (home directory: /home/qntv)
+FACE_YUNET=/home/qntv/face-models/yunet.onnx
+FACE_SFACE=/home/qntv/face-models/sface.onnx
+# Paste the same FACE_DEVICE_KEY configured on the server
+FACE_DEVICE_KEY=<khoa-da-tao-tren-may-chu>
+
+# Ultrasonic sensor defaults in centimeters. Adjust if the cabinet has been calibrated.
+BASELINE_EMPTY_CM=35.0
+OCCUPIED_MARGIN_CM=5.0
+
+# Offline PaddleOCR settings used by the Edge setup.
+PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+DISABLE_MODEL_SOURCE_CHECK=True
+FLAGS_use_mkldnn=0
+FLAGS_enable_pir_api=0
