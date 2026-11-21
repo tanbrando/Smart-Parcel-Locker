@@ -1,0 +1,391 @@
+/* ==========================================================================
+   Auth Login Page & User Portal (Upload, Interactive Multi-Angle Face ID HUD)
+   ========================================================================== */
+
+/* Login Page */
+.auth-shell {
+  min-height: calc(100vh - 32px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-surface);
+  border-radius: 26px;
+  padding: 32px 28px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.06);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-logo {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 12px;
+  background: var(--dark-pill);
+  color: var(--accent-yellow);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.3rem;
+}
+
+.auth-header h1 {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.auth-header p {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.auth-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+  display: none;
+}
+
+.demo-accounts-box {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.12);
+}
+
+.demo-accounts-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.demo-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.demo-fill-btn {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+
+.demo-fill-btn:hover {
+  background: var(--bg-subtle-hover);
+}
+
+.demo-fill-btn span {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Portal Tab Panels */
+.portal-tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.portal-tab-panel.active {
+  display: flex;
+}
+
+/* Upload Dropzone */
+.upload-dropzone {
+  border: 2px dashed #cbc8be;
+  background: var(--bg-subtle);
+  border-radius: 18px;
+  padding: 30px 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-dropzone:hover {
+  border-color: var(--dark-pill);
+  background: #f2f1eb;
+}
+
+.upload-preview-img {
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: 14px;
+  margin-top: 14px;
+  object-fit: contain;
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Face ID Studio: camera stage + icon-only HUD and controls
+   -------------------------------------------------------------------------- */
+.face-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.face-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.face-studio {
+  max-width: 440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.face-camera-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #181816;
+}
+
+.face-camera-stage video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.face-hud-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.face-start-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.face-start-overlay span {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--accent-yellow);
+  color: var(--dark-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.face-camera-stage.is-live .face-start-overlay {
+  display: none;
+}
+
+.face-telemetry {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 1;
+}
+
+.face-camera-stage:not(.is-live) .face-telemetry {
+  display: none;
+}
+
+.tel-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  background: rgba(24, 24, 22, 0.72);
+  color: #ffffff;
+  transition: background 0.2s;
+}
+
+.tel-dot.ok {
+  background: rgba(21, 128, 61, 0.92);
+}
+
+.tel-dot.warn {
+  background: rgba(217, 119, 6, 0.92);
+}
+
+.face-countdown-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(21, 128, 61, 0.92);
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.face-countdown-overlay.show {
+  display: flex;
+}
+
+.face-prompt-pill {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 24, 22, 0.9);
+  color: var(--accent-yellow);
+  padding: 7px 16px;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+  max-width: 92%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1;
+}
+
+/* 5 angle thumbnails = progress */
+.angle-steps-grid {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.angle-step-card {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 0;
+  overflow: visible;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.angle-step-card img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.angle-step-card.current {
+  border-color: var(--dark-pill);
+  color: var(--dark-pill);
+  box-shadow: 0 0 0 3px var(--accent-yellow);
+}
+
+.angle-step-card.captured {
+  border-color: #22c55e;
+}
+
+.angle-step-card.captured::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid #ffffff;
+}
+
+/* Control bar: reset / shutter / auto */
+.face-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.shutter-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 4px solid var(--accent-yellow);
+  background: var(--dark-pill);
+  color: var(--accent-yellow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.45rem;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  transition: transform 0.1s;
+}
+
+.shutter-btn:active {
+  transform: scale(0.94);
+}
+
+.shutter-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

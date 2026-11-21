@@ -13,8 +13,10 @@ from contracts.schemas import (
     OrderResponse,
     UserCreateRequest,
     UserResponse,
+    UserNotificationItem,
     OrderStatus,
 )
+from server.core.security import hash_password
 from server.db.session import get_db
 from server.db.models import Order, User
 from server.services.ocr_service import ScreenshotOcrService
@@ -132,9 +134,12 @@ def register_order_from_screenshot(
 
 
 @router.get("", response_model=List[OrderResponse])
-def list_orders(db: Session = Depends(get_db)):
-    """Lists all orders in system with user details."""
-    orders = db.query(Order).order_by(Order.created_at.desc()).all()
+def list_orders(user_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Lists orders in system (optionally filtered by user_id) with user details."""
+    query = db.query(Order)
+    if user_id is not None:
+        query = query.filter(Order.user_id == user_id)
+    orders = query.order_by(Order.created_at.desc()).all()
     results = []
     for o in orders:
         ord_dict = {
@@ -160,6 +165,61 @@ def list_orders(db: Session = Depends(get_db)):
     return results
 
 
+@router.get("/user/{user_id}/notifications", response_model=List[UserNotificationItem])
+def get_user_notifications(user_id: int, db: Session = Depends(get_db)):
+    """Returns delivery notifications with OTP codes for a specific user."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user_orders = (
+        db.query(Order)
+        .filter(
+            Order.user_id == user_id,
+            Order.status.in_([OrderStatus.STORED, OrderStatus.COLLECTED]),
+        )
+        .order_by(Order.delivered_at.desc(), Order.created_at.desc())
+        .all()
+    )
+
+    # Count how many STORED parcels share each locker_id for this user
+    locker_counts = {}
+    for o in user_orders:
+        if o.status == OrderStatus.STORED and o.locker_id:
+            locker_counts[o.locker_id] = locker_counts.get(o.locker_id, 0) + 1
+
+    notifications: List[UserNotificationItem] = []
+    for o in user_orders:
+        locker_num = o.locker.locker_number if o.locker else o.locker_id
+        shared_count = locker_counts.get(o.locker_id, 1) if o.status == OrderStatus.STORED else 1
+        if o.status == OrderStatus.STORED:
+            if shared_count > 1:
+                msg = (
+                    f"Đơn {o.tracking_number or f'#{o.id}'} đã được giao vào Ngăn #{locker_num} "
+                    f"(gộp chung {shared_count} đơn cùng mã OTP {o.otp_code})."
+                )
+            else:
+                msg = f"Đơn {o.tracking_number or f'#{o.id}'} đã được giao vào Ngăn #{locker_num}. Mã OTP: {o.otp_code}."
+        else:
+            msg = f"Đơn {o.tracking_number or f'#{o.id}'} đã được nhận thành công từ Ngăn #{locker_num or '-'}."
+
+        notifications.append(
+            UserNotificationItem(
+                order_id=o.id,
+                tracking_number=o.tracking_number or f"ORD-{o.id}",
+                order_code=o.order_code,
+                locker_number=locker_num,
+                otp_code=o.otp_code,
+                status=o.status,
+                delivered_at=o.delivered_at,
+                collected_at=o.collected_at,
+                shared_locker_count=shared_count,
+                message=msg,
+            )
+        )
+    return notifications
+
+
 @router.get("/users", response_model=List[UserResponse])
 def list_users(db: Session = Depends(get_db)):
     """Lists registered users."""
@@ -174,10 +234,13 @@ def create_user(
     """Admin endpoint: Registers a new user."""
     phone_clean = payload.phone.strip()
     phone_last4 = phone_clean[-4:] if len(phone_clean) >= 4 else phone_clean
+    raw_password = (payload.password or "123456").strip() or "123456"
     user = User(
         full_name=payload.full_name.strip(),
         phone=phone_clean,
         phone_last4=phone_last4,
+        role=payload.role.value,
+        password_hash=hash_password(raw_password),
         telegram_chat_id=payload.telegram_chat_id,
     )
     db.add(user)

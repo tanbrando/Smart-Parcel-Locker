@@ -2,10 +2,45 @@
  * Smart Parcel Locker - Page-specific Business Logic & API Interactivity
  */
 
+const ic = (name) => (typeof window.faIcon === "function" ? window.faIcon(name) : "");
+
+function escapeAttr(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function weightCheck(o) {
+  if (o.actual_weight === null || o.actual_weight === undefined) return null;
+  const dev = Math.abs(o.expected_weight - o.actual_weight);
+  return { dev, ok: dev <= 150 };
+}
+
 let globalLockers = [];
 let globalOrders = [];
 let globalUsers = [];
 let globalLogs = [];
+
+function ensureAdminSession() {
+  try {
+    const raw = localStorage.getItem("smartlocker_session");
+    if (!raw) {
+      window.location.href = "/login";
+      return false;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.user) {
+      window.location.href = "/login";
+      return false;
+    }
+    if ((parsed.user.role || "USER").toUpperCase() !== "ADMIN") {
+      window.location.href = "/portal";
+      return false;
+    }
+    return true;
+  } catch (_) {
+    window.location.href = "/login";
+    return false;
+  }
+}
 
 // Fetch all common data
 async function fetchAllData() {
@@ -39,6 +74,7 @@ function updateSidebarBadges() {
 // 1. Dashboard Overview Page (index.html)
 // -----------------------------------------------------------------------------
 async function initDashboardPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("dashboard");
   checkGlobalHealth();
   await fetchAllData();
@@ -54,7 +90,7 @@ function renderDashboardMetrics() {
   const totalLockers = globalLockers.length;
   const occupiedLockers = globalLockers.filter(l => l.status === "OCCUPIED").length;
   const emptyLockers = globalLockers.filter(l => l.status === "EMPTY").length;
-  const occupancyRate = totalLockers > 0 ? ((occupiedLockers / totalLockers) * 100).toFixed(1) : "0.0";
+  const occupancyRate = totalLockers > 0 ? Math.round((occupiedLockers / totalLockers) * 100) : 0;
 
   const storedOrders = globalOrders.filter(o => o.status === "STORED").length;
   const pendingOrders = globalOrders.filter(o => o.status === "REGISTERED").length;
@@ -94,7 +130,7 @@ function renderDashboardLockers() {
         <div class="item-left">
           <div class="item-avatar">#${l.locker_number}</div>
           <div class="item-text">
-            <b>Ngăn Tủ Số ${l.locker_number}</b>
+            <b>Ngăn ${l.locker_number}</b>
             <span>${l.current_weight}g / ${l.max_weight}g (${pct}%)</span>
           </div>
         </div>
@@ -109,20 +145,20 @@ function renderDashboardRecentOrders() {
   if (!container) return;
 
   if (globalOrders.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; padding:10px;">Chưa có kiện hàng nào.</div>`;
+    container.innerHTML = `<div class="text-muted" style="font-size:0.85rem; padding:10px;">Chưa có bưu kiện</div>`;
     return;
   }
 
   container.innerHTML = globalOrders.slice(0, 4).map(o => {
-    const dev = o.actual_weight !== null ? Math.abs(o.expected_weight - o.actual_weight) : null;
-    const devText = dev !== null ? (dev <= 150 ? `Khớp (+/-${dev}g)` : `Lệch (${dev}g)`) : "Chờ cân";
+    const chk = weightCheck(o);
+    const name = o.recipient_name || (o.user ? o.user.full_name : "Khách");
     return `
       <div class="bento-list-item">
         <div class="item-left">
-          <div class="item-avatar">PK</div>
+          <div class="item-avatar">${ic("box-open")}</div>
           <div class="item-text">
-            <b>${o.tracking_number}</b>
-            <span>${o.user ? o.user.full_name : "Khách"} • ${devText}</span>
+            <b title="${escapeAttr(o.tracking_number)}">${o.tracking_number}</b>
+            <span>${name}${chk ? ` • <span class="${chk.ok ? "text-ok" : "text-bad"}" style="display:inline;">±${chk.dev}g</span>` : ""}</span>
           </div>
         </div>
         <span class="pill-badge ${o.status}">${o.status}</span>
@@ -136,22 +172,22 @@ function renderDashboardRecentLogs() {
   if (!container) return;
 
   if (globalLogs.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; padding:10px;">Chưa có nhật ký hoạt động.</div>`;
+    container.innerHTML = `<div class="text-muted" style="font-size:0.85rem; padding:10px;">Chưa có nhật ký</div>`;
     return;
   }
 
   container.innerHTML = globalLogs.slice(0, 4).map(l => {
-    const time = l.created_at ? new Date(l.created_at).toLocaleTimeString("vi-VN") : "-";
+    const time = l.created_at ? new Date(l.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "-";
     return `
       <div class="bento-list-item">
         <div class="item-left">
-          <div class="item-avatar">LG</div>
+          <div class="item-avatar">${ic("clipboard-list")}</div>
           <div class="item-text">
             <b>${l.action}</b>
-            <span>${l.details || "Hành động hệ thống"}</span>
+            <span title="${escapeAttr(l.details)}">${l.details || "-"}</span>
           </div>
         </div>
-        <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${time}</span>
+        <span class="text-muted" style="font-size:0.75rem; font-weight:600;">${time}</span>
       </div>
     `;
   }).join("");
@@ -161,6 +197,7 @@ function renderDashboardRecentLogs() {
 // 2. Lockers Page (lockers.html)
 // -----------------------------------------------------------------------------
 async function initLockersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("lockers");
   checkGlobalHealth();
   await fetchAllData();
@@ -174,35 +211,30 @@ function renderLockersGridFull() {
   container.innerHTML = globalLockers.map(l => {
     const pct = l.max_weight > 0 ? Math.min(100, Math.round((l.current_weight / l.max_weight) * 100)) : 0;
     const isMaint = l.status === "MAINTENANCE";
+    const updated = l.updated_at ? new Date(l.updated_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "-";
 
     return `
-      <div class="bento-card" style="display:flex; flex-direction:column; justify-content:space-between;">
+      <div class="bento-card" style="display:flex; flex-direction:column; gap:14px;">
+        <div class="bento-header" style="margin-bottom:0;">
+          <div class="bento-title">${ic("vault")} Ngăn #${l.locker_number}</div>
+          <span class="pill-badge ${l.status}">${l.status}</span>
+        </div>
+
         <div>
-          <div class="bento-header" style="margin-bottom:12px;">
-            <div style="font-size:1.15rem; font-weight:800;">Ngăn Tủ #${l.locker_number}</div>
-            <span class="pill-badge ${l.status}">${l.status}</span>
+          <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:600; margin-bottom:6px;">
+            <span title="Tải trọng">${ic("weight-hanging")} ${l.current_weight}g / ${l.max_weight}g</span>
+            <span>${pct}%</span>
           </div>
-
-          <div style="margin: 16px 0;">
-            <div style="display:flex; justify-content:space-between; font-size:0.8rem; font-weight:600; margin-bottom:6px;">
-              <span>Tải Trọng Thực Tế</span>
-              <span>${l.current_weight}g / ${l.max_weight}g</span>
-            </div>
-            <div style="height:10px; background:#e5e3dc; border-radius:9999px; overflow:hidden;">
-              <div style="height:100%; width:${pct}%; background:var(--dark-pill); border-radius:9999px;"></div>
-            </div>
-          </div>
-
-          <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.4;">
-            <div>• Cảm biến trọng lượng: HX711 Load Cell</div>
-            <div>• Khóa điện tử: 12V Solenoid Relay</div>
-            <div>• Cập nhật lần cuối: ${new Date(l.updated_at).toLocaleTimeString("vi-VN")}</div>
+          <div class="stage-track" style="height:10px; margin-bottom:0;">
+            <div class="stage-fill" style="width:${pct}%;"></div>
           </div>
         </div>
 
-        <div style="margin-top:20px; display:flex; gap:8px;">
-          <button onclick="toggleLockerMaintenance(${l.id})" class="action-pill-btn secondary" style="width:100%; justify-content:center;">
-            ${isMaint ? "Bật Hoạt Động" : "Bật Bảo Trì"}
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span class="text-muted" style="font-size:0.82rem;" title="Cập nhật lần cuối">${ic("clock")} ${updated}</span>
+          <button onclick="toggleLockerMaintenance(${l.id})" class="action-pill-btn secondary sm"
+            title="${isMaint ? "Bật hoạt động" : "Chuyển sang bảo trì"}">
+            ${ic(isMaint ? "power-off" : "wrench")} ${isMaint ? "Hoạt động" : "Bảo trì"}
           </button>
         </div>
       </div>
@@ -228,6 +260,7 @@ async function toggleLockerMaintenance(id) {
 let currentOrderFilter = "ALL";
 
 async function initOrdersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("orders");
   checkGlobalHealth();
   await fetchAllData();
@@ -246,39 +279,32 @@ function renderOrdersTable() {
   const tbody = document.querySelector("#ordersTable tbody");
   if (!tbody) return;
 
-  let filtered = globalOrders;
-  if (currentOrderFilter !== "ALL") {
-    filtered = globalOrders.filter(o => o.status === currentOrderFilter);
-  }
+  const filtered = currentOrderFilter === "ALL"
+    ? globalOrders
+    : globalOrders.filter(o => o.status === currentOrderFilter);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted);">Không tìm thấy bưu kiện nào.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Không có bưu kiện</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.map(o => {
-    const dev = o.actual_weight !== null ? Math.abs(o.expected_weight - o.actual_weight) : null;
-    let devPill = `<span style="color:var(--text-muted);">-</span>`;
-    if (dev !== null) {
-      devPill = dev <= 150
-        ? `<span style="color:var(--success); font-weight:700;">Đạt (${dev}g)</span>`
-        : `<span style="color:var(--danger); font-weight:700;">Lệch (${dev}g)</span>`;
-    }
-
-    const time = o.created_at ? new Date(o.created_at).toLocaleDateString("vi-VN") : "-";
+    const chk = weightCheck(o);
+    const weight = chk
+      ? `${o.expected_weight} → ${o.actual_weight}g <span class="${chk.ok ? "text-ok" : "text-bad"}" title="Lệch ${chk.dev}g">${ic(chk.ok ? "circle-check" : "triangle-exclamation")}</span>`
+      : `${o.expected_weight}g`;
 
     return `
       <tr>
-        <td><b>#${o.id}</b></td>
-        <td><code>${o.tracking_number}</code></td>
-        <td>${o.order_code || "-"}</td>
-        <td><b>${o.user ? o.user.full_name : "Khách"}</b></td>
+        <td>
+          <code>${o.tracking_number}</code>
+          <span class="cell-sub">#${o.id}${o.order_code ? ` • ${o.order_code}` : ""}</span>
+        </td>
+        <td><b>${o.recipient_name || (o.user ? o.user.full_name : "Khách")}</b></td>
         <td><span class="pill-badge ${o.status}">${o.status}</span></td>
-        <td>${o.locker ? `Ngăn #${o.locker.locker_number}` : "-"}</td>
-        <td>${o.expected_weight}g</td>
-        <td>${o.actual_weight !== null ? `${o.actual_weight}g` : "-"}</td>
-        <td>${devPill}</td>
-        <td>${o.otp_code ? `<b><code style="font-size:0.9rem;">${o.otp_code}</code></b>` : "-"}</td>
+        <td>${o.locker_id ? `#${o.locker_id}` : "-"}</td>
+        <td style="white-space:nowrap;">${weight}</td>
+        <td>${o.otp_code ? `<b><code>${o.otp_code}</code></b>` : "-"}</td>
       </tr>
     `;
   }).join("");
@@ -288,6 +314,7 @@ function renderOrdersTable() {
 // 4. Users Page (users.html)
 // -----------------------------------------------------------------------------
 async function initUsersPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("users");
   checkGlobalHealth();
   await fetchAllData();
@@ -304,29 +331,34 @@ function renderUsersTable() {
   if (!tbody) return;
 
   if (globalUsers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có tài khoản nào.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có tài khoản</td></tr>`;
     return;
   }
 
   tbody.innerHTML = globalUsers.map(u => {
     const isLinked = u.telegram_chat_id !== null && u.telegram_chat_id !== undefined;
     const tgBadge = isLinked
-      ? `<span class="pill-badge" style="background:#e0f2fe; color:#0369a1;">Đã Liên Kết (#${u.telegram_chat_id})</span>`
-      : `<span class="pill-badge" style="background:#f1f5f9; color:#64748b;">Chưa Kích Hoạt</span>`;
+      ? `<span class="pill-badge REGISTERED" title="Chat ID ${u.telegram_chat_id}">Đã liên kết</span>`
+      : `<span class="pill-badge" style="background:#f1f5f9; color:#64748b;" title="Kích hoạt: /start ${u.id}">Chưa</span>`;
+    const faceBadge = u.face_auth_enabled
+      ? `<span class="pill-badge COLLECTED">Bật ${(u.face_angles_enrolled || []).length}/5</span>`
+      : u.face_registered
+        ? `<span class="pill-badge OCCUPIED">Tắt</span>`
+        : `<span class="pill-badge" style="background:#f1f5f9; color:#64748b;">Chưa</span>`;
+    const action = isLinked
+      ? `<button onclick="adminUnlinkUser(${u.id})" class="icon-btn sm danger" title="Gỡ liên kết Telegram" aria-label="Gỡ liên kết Telegram">${ic("link-slash")}</button>`
+      : `<a href="/simulator" class="icon-btn sm" title="Test kích hoạt: /start ${u.id}" aria-label="Test kích hoạt Telegram">${ic("paper-plane")}</a>`;
 
     return `
       <tr>
-        <td><b>#${u.id}</b></td>
-        <td><b>${u.full_name}</b></td>
-        <td><code>${u.phone}</code></td>
-        <td>${tgBadge}</td>
-        <td><code>/start ${u.id}</code></td>
         <td>
-          ${isLinked
-            ? `<button onclick="adminUnlinkUser(${u.id})" class="action-pill-btn secondary" style="padding:4px 12px; font-size:0.75rem;">Gỡ Telegram</button>`
-            : `<a href="/simulator" class="action-pill-btn" style="padding:4px 12px; font-size:0.75rem;">Test Kích Hoạt</a>`
-          }
+          <b>${u.full_name}</b>
+          <span class="cell-sub">#${u.id}${(u.role || "USER") !== "USER" ? ` • ${u.role}` : ""}</span>
         </td>
+        <td><code>${u.phone}</code></td>
+        <td>${faceBadge}</td>
+        <td>${tgBadge}</td>
+        <td>${action}</td>
       </tr>
     `;
   }).join("");
@@ -336,22 +368,23 @@ async function handleCreateUser(e) {
   e.preventDefault();
   const name = document.getElementById("newFullName").value.trim();
   const phone = document.getElementById("newPhone").value.trim();
+  const pwdEl = document.getElementById("newPassword");
+  const password = pwdEl ? pwdEl.value.trim() || "123456" : "123456";
   const resBox = document.getElementById("createUserResult");
 
   try {
     const res = await fetch(`${API_BASE}/orders/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name: name, phone: phone }),
+      body: JSON.stringify({ full_name: name, phone: phone, password: password }),
     });
 
     if (res.ok) {
       const u = await res.json();
       resBox.style.display = "block";
       resBox.innerHTML = `
-        <div style="background:var(--accent-yellow); color:#181816; padding:12px 16px; border-radius:14px; font-weight:600; font-size:0.85rem; margin-top:12px;">
-          Tạo tài khoản thành công! User ID: #${u.id} (${u.full_name}).<br>
-          Cú pháp kích hoạt: <code>/start ${u.id}</code> hoặc <code>/link ${u.id}</code>
+        <div style="background:var(--accent-yellow); color:#181816; padding:12px 16px; border-radius:14px; font-weight:600; font-size:0.88rem; margin-top:12px;">
+          ${ic("circle-check")} #${u.id} ${u.full_name} • Telegram: <code>/start ${u.id}</code>
         </div>
       `;
       document.getElementById("newFullName").value = "";
@@ -379,6 +412,7 @@ async function adminUnlinkUser(userId) {
 // 5. Logs Page (logs.html)
 // -----------------------------------------------------------------------------
 async function initLogsPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("logs");
   checkGlobalHealth();
   await fetchAllData();
@@ -390,19 +424,21 @@ function renderLogsTable() {
   if (!tbody) return;
 
   if (globalLogs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có nhật ký hoạt động.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Chưa có nhật ký</td></tr>`;
     return;
   }
 
   tbody.innerHTML = globalLogs.map(l => {
-    const time = l.created_at ? new Date(l.created_at).toLocaleString("vi-VN") : "-";
+    const time = l.created_at
+      ? new Date(l.created_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
+      : "-";
     return `
       <tr>
-        <td style="color:var(--text-muted); font-size:0.78rem;">${time}</td>
+        <td class="text-muted" style="font-size:0.82rem; white-space:nowrap;">${time}</td>
         <td><span class="pill-badge ${l.action}">${l.action}</span></td>
-        <td>${l.locker ? `Ngăn #${l.locker.locker_number}` : "-"}</td>
+        <td>${l.locker ? `#${l.locker.locker_number}` : "-"}</td>
         <td>${l.order_id ? `#${l.order_id}` : "-"}</td>
-        <td><code>${l.details || "-"}</code></td>
+        <td class="cell-truncate" title="${escapeAttr(l.details)}">${l.details || "-"}</td>
       </tr>
     `;
   }).join("");
@@ -412,6 +448,7 @@ function renderLogsTable() {
 // 6. Simulator Page (simulator.html)
 // -----------------------------------------------------------------------------
 async function initSimulatorPage() {
+  if (!ensureAdminSession()) return;
   renderSharedSidebar("simulator");
   checkGlobalHealth();
   await fetchAllData();

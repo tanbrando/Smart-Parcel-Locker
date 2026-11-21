@@ -3,6 +3,8 @@ Security, OTP Engine and Rate Limiter Module [Person 4].
 Generates cryptographically random numeric OTPs and enforces rate limiting on verification attempts.
 """
 import time
+import hmac
+import hashlib
 import secrets
 import string
 import logging
@@ -12,6 +14,54 @@ from typing import Tuple, Optional
 from server.core.config import settings
 
 logger = logging.getLogger("server.core.security")
+
+
+def hash_password(password: str) -> str:
+    """Hashes a plaintext password with SHA-256 and application SECRET_KEY."""
+    salted = f"{settings.SECRET_KEY}:{password}".encode("utf-8")
+    return "sha256$" + hashlib.sha256(salted).hexdigest()
+
+
+def verify_password(plain_password: str, stored_hash: Optional[str]) -> bool:
+    """Verifies plaintext password against stored hash (also supports legacy plain defaults)."""
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("sha256$"):
+        expected = hash_password(plain_password)
+        return hmac.compare_digest(expected, stored_hash)
+    return hmac.compare_digest(plain_password, stored_hash)
+
+
+def create_session_token(user_id: int, role: str) -> str:
+    """Generates an HMAC-signed lightweight session token for web clients."""
+    issued_at = int(time.time())
+    payload = f"{user_id}:{role}:{issued_at}"
+    sig = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:24]
+    return f"{payload}:{sig}"
+
+
+def parse_session_token(token: str) -> Optional[Tuple[int, str]]:
+    """Validates an HMAC-signed session token and returns (user_id, role) if valid."""
+    try:
+        parts = token.strip().split(":")
+        if len(parts) != 4:
+            return None
+        user_id_str, role, issued_at, sig = parts
+        payload = f"{user_id_str}:{role}:{issued_at}"
+        expected_sig = hmac.new(
+            settings.SECRET_KEY.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()[:24]
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        return int(user_id_str), role
+    except Exception:
+        return None
 
 
 def generate_otp(length: int = settings.OTP_LENGTH, hours_valid: int = settings.OTP_VALID_HOURS) -> Tuple[str, datetime]:

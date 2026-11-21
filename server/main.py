@@ -37,16 +37,42 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
 from server.core.config import settings
+from server.core.security import hash_password
 from server.db.session import engine, Base, SessionLocal
 from server.db.models import Locker, LockerStatus, User
-from server.routers import orders, edge, lockers, telegram
+from server.routers import orders, edge, lockers, telegram, auth
 from server.services.telegram import start_telegram_polling_safe
 
 
+def _ensure_user_schema_columns():
+    """Safely adds new auth/face columns to existing SQLite users table if missing."""
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(users)"))
+            existing_cols = {row[1] for row in result.fetchall()}
+            if not existing_cols:
+                return
+            migrations = [
+                ("role", "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'USER'"),
+                ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(128) NOT NULL DEFAULT '123456'"),
+                ("face_auth_enabled", "ALTER TABLE users ADD COLUMN face_auth_enabled INTEGER NOT NULL DEFAULT 0"),
+                ("face_registered", "ALTER TABLE users ADD COLUMN face_registered INTEGER NOT NULL DEFAULT 0"),
+                ("face_data_json", "ALTER TABLE users ADD COLUMN face_data_json TEXT"),
+            ]
+            for col_name, ddl in migrations:
+                if col_name not in existing_cols:
+                    conn.execute(text(ddl))
+            conn.commit()
+    except Exception:
+        pass
+
+
 def init_database_tables():
-    """Initializes tables and seeds default users & physical lockers if not present."""
+    """Initializes tables, migrates new columns safely, and seeds default users & physical lockers."""
     Base.metadata.create_all(bind=engine)
+    _ensure_user_schema_columns()
     db = SessionLocal()
     try:
         # Seed default users
@@ -57,6 +83,8 @@ def init_database_tables():
                     full_name="Nguyễn Minh Tấn",
                     phone="0912343456",
                     phone_last4="3456",
+                    role="USER",
+                    password_hash=hash_password("123456"),
                     telegram_chat_id=123456789,
                 ),
                 User(
@@ -64,10 +92,26 @@ def init_database_tables():
                     full_name="Trần Thị Hoa",
                     phone="0987654321",
                     phone_last4="4321",
+                    role="USER",
+                    password_hash=hash_password("123456"),
                     telegram_chat_id=987654321,
                 ),
             ]
             db.add_all(default_users)
+            db.commit()
+
+        # Ensure default Admin account exists
+        admin_exists = db.query(User).filter(User.role == "ADMIN").first()
+        if not admin_exists:
+            admin_user = User(
+                full_name="Quản Trị Viên Trạm",
+                phone="0900000000",
+                phone_last4="0000",
+                role="ADMIN",
+                password_hash=hash_password("admin123"),
+                telegram_chat_id=None,
+            )
+            db.add(admin_user)
             db.commit()
 
         # Seed default lockers
@@ -129,6 +173,7 @@ def health_check():
 
 
 # Include Routers
+app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(edge.router, prefix=settings.API_V1_STR)
 app.include_router(lockers.router, prefix=settings.API_V1_STR)
@@ -139,6 +184,18 @@ app.include_router(telegram.router, prefix=settings.API_V1_STR)
 web_dir = REPO_ROOT / "web"
 if web_dir.exists():
     app.mount("/static", StaticFiles(directory=web_dir), name="static")
+
+
+@app.get("/login", include_in_schema=False)
+def serve_login():
+    """Serves the User & Admin Login Page."""
+    return FileResponse(REPO_ROOT / "web" / "login.html")
+
+
+@app.get("/portal", include_in_schema=False)
+def serve_portal():
+    """Serves the Responsive User Portal (Orders, Upload, Multi-Angle Face ID, Notifications)."""
+    return FileResponse(REPO_ROOT / "web" / "portal.html")
 
 
 @app.get("/", include_in_schema=False)

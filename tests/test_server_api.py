@@ -34,11 +34,38 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 
 
 def init_test_db(session):
+    from server.core.security import hash_password
+
     Base.metadata.create_all(bind=test_engine)
     # Seed users
-    u1 = User(id=1, full_name="Nguyễn Minh Tấn", phone="0912343456", phone_last4="3456", telegram_chat_id=123456789)
-    u2 = User(id=2, full_name="Trần Thị Hoa", phone="0987654321", phone_last4="4321", telegram_chat_id=987654321)
-    session.add_all([u1, u2])
+    u1 = User(
+        id=1,
+        full_name="Nguyễn Minh Tấn",
+        phone="0912343456",
+        phone_last4="3456",
+        role="USER",
+        password_hash=hash_password("123456"),
+        telegram_chat_id=123456789,
+    )
+    u2 = User(
+        id=2,
+        full_name="Trần Thị Hoa",
+        phone="0987654321",
+        phone_last4="4321",
+        role="USER",
+        password_hash=hash_password("123456"),
+        telegram_chat_id=987654321,
+    )
+    admin = User(
+        id=3,
+        full_name="Quản Trị Viên Trạm",
+        phone="0900000000",
+        phone_last4="0000",
+        role="ADMIN",
+        password_hash=hash_password("admin123"),
+        telegram_chat_id=None,
+    )
+    session.add_all([u1, u2, admin])
 
     # Seed lockers
     l1 = Locker(id=1, locker_number=1, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY)
@@ -328,6 +355,165 @@ def test_screenshot_ocr_service_details():
     assert details["tracking_number"] == "SPXVN0123456789"
     assert "order_code" in details
     assert "expected_weight" in details
+
+
+def test_multi_parcel_same_user_same_locker_shared_otp(db_session):
+    """Multiple orders for the same user go into the same locker and keep the exact same OTP."""
+    u1 = db_session.query(User).filter(User.id == 1).first()
+    u2 = db_session.query(User).filter(User.id == 2).first()
+
+    o1 = Order(user_id=u1.id, tracking_number="SPX_BATCH_001", expected_weight=600, status=OrderStatus.REGISTERED)
+    o2 = Order(user_id=u1.id, tracking_number="SPX_BATCH_002", expected_weight=700, status=OrderStatus.REGISTERED)
+    o3 = Order(user_id=u2.id, tracking_number="SPX_OTHER_003", expected_weight=500, status=OrderStatus.REGISTERED)
+    db_session.add_all([o1, o2, o3])
+    db_session.commit()
+
+    # 1. Shipper verifies & deposits Order 1 (User 1) -> Locker #1
+    v1 = edge.verify_package(PackageVerificationRequest(tracking_number="SPX_BATCH_001", ocr_weight=600), db=db_session)
+    assert v1.action == "UNLOCK_DOOR"
+    assert v1.locker_number == 1
+
+    d1 = edge.confirm_deposit(
+        DepositConfirmationRequest(order_id=o1.id, locker_number=1, delta_weight=610),
+        db=db_session,
+    )
+    assert d1.success is True
+    first_otp = d1.otp_generated
+    assert len(first_otp) == 6
+
+    # 2. Shipper verifies & deposits Order 2 (same User 1) -> MUST reuse Locker #1 and keep first_otp unchanged
+    v2 = edge.verify_package(PackageVerificationRequest(tracking_number="SPX_BATCH_002", ocr_weight=700), db=db_session)
+    assert v2.action == "UNLOCK_DOOR"
+    assert v2.locker_number == 1
+
+    d2 = edge.confirm_deposit(
+        DepositConfirmationRequest(order_id=o2.id, locker_number=1, delta_weight=690),
+        db=db_session,
+    )
+    assert d2.success is True
+    assert d2.otp_generated == first_otp  # OTP unchanged!
+
+    # Verify locker weight accumulated and notifications report shared_locker_count == 2
+    locker1 = db_session.query(Locker).filter(Locker.locker_number == 1).first()
+    assert locker1.current_weight == 1300
+    assert locker1.status == LockerStatus.OCCUPIED
+
+    notifs = orders.get_user_notifications(user_id=u1.id, db=db_session)
+    assert len(notifs) == 2
+    assert all(n.otp_code == first_otp and n.shared_locker_count == 2 for n in notifs)
+
+    # 3. Shipper verifies Order 3 (different User 2) -> MUST NOT enter Locker #1, gets Locker #2
+    v3 = edge.verify_package(PackageVerificationRequest(tracking_number="SPX_OTHER_003", ocr_weight=500), db=db_session)
+    assert v3.action == "UNLOCK_DOOR"
+    assert v3.locker_number == 2
+
+    # 4. User 1 enters shared OTP -> BOTH Order 1 and Order 2 become COLLECTED, Locker #1 becomes EMPTY
+    pickup = edge.verify_otp(OtpVerificationRequest(otp_code=first_otp), db=db_session)
+    assert pickup.valid is True
+    assert pickup.locker_number == 1
+
+    db_session.refresh(o1)
+    db_session.refresh(o2)
+    db_session.refresh(locker1)
+    assert o1.status == OrderStatus.COLLECTED
+    assert o2.status == OrderStatus.COLLECTED
+    assert o1.otp_code is None
+    assert o2.otp_code is None
+    assert locker1.status == LockerStatus.EMPTY
+    assert locker1.current_weight == 0
+
+
+def test_auth_login_user_and_admin(db_session):
+    from fastapi import HTTPException
+    from contracts.schemas import LoginRequest, UserRole
+    from server.routers import auth
+
+    # User login
+    u_res = auth.login(LoginRequest(phone="0912343456", password="123456"), db=db_session)
+    assert u_res.success is True
+    assert u_res.user.role == UserRole.USER
+    assert u_res.redirect_url == "/portal"
+
+    # Admin login
+    a_res = auth.login(LoginRequest(phone="0900000000", password="admin123"), db=db_session)
+    assert a_res.success is True
+    assert a_res.user.role == UserRole.ADMIN
+    assert a_res.redirect_url == "/"
+
+    # Wrong password raises 401
+    with pytest.raises(HTTPException) as exc:
+        auth.login(LoginRequest(phone="0912343456", password="wrong"), db=db_session)
+    assert exc.value.status_code == 401
+
+
+def test_face_auth_toggle_and_multi_angle_enrollment(db_session):
+    from fastapi import HTTPException
+    from contracts.schemas import FaceToggleRequest, FaceEnrollMultiAngleRequest
+    from server.routers import auth
+
+    # Cannot enable Face ID before enrolling 5 angles
+    with pytest.raises(HTTPException) as exc_before:
+        auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session)
+    assert exc_before.value.status_code == 400
+
+    # Incomplete angles rejected
+    with pytest.raises(HTTPException) as exc_partial:
+        auth.enroll_face_multi_angle(
+            FaceEnrollMultiAngleRequest(user_id=1, angles={"front": "data:image/jpeg;base64,abc"}),
+            db=db_session,
+        )
+    assert exc_partial.value.status_code == 400
+
+    # Full 5-angle enrollment succeeds and activates Face ID
+    five_angles = {
+        "front": "data:image/jpeg;base64,front_img",
+        "left": "data:image/jpeg;base64,left_img",
+        "right": "data:image/jpeg;base64,right_img",
+        "up": "data:image/jpeg;base64,up_img",
+        "down": "data:image/jpeg;base64,down_img",
+    }
+    enroll_res = auth.enroll_face_multi_angle(
+        FaceEnrollMultiAngleRequest(user_id=1, angles=five_angles),
+        db=db_session,
+    )
+    assert enroll_res.success is True
+    assert enroll_res.face_registered is True
+    assert enroll_res.face_auth_enabled is True
+    assert set(enroll_res.enrolled_angles) == set(five_angles.keys())
+
+    # Toggle off and back on
+    off_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=False), db=db_session)
+    assert off_res.face_auth_enabled is False
+    on_res = auth.toggle_face_auth(FaceToggleRequest(user_id=1, enabled=True), db=db_session)
+    assert on_res.face_auth_enabled is True
+
+
+def test_modular_web_portal_and_login_assets():
+    from pathlib import Path
+    from server.main import REPO_ROOT, serve_login, serve_portal
+
+    for handler in (serve_login, serve_portal):
+        res = handler()
+        assert Path(res.path).exists(), f"Missing page: {res.path}"
+        assert "SmartLocker" in Path(res.path).read_text(encoding="utf-8")
+
+    expected_modules = [
+        REPO_ROOT / "web" / "css" / "layout-responsive.css",
+        REPO_ROOT / "web" / "css" / "components.css",
+        REPO_ROOT / "web" / "css" / "portal.css",
+        REPO_ROOT / "web" / "js" / "core" / "icons.js",
+        REPO_ROOT / "web" / "js" / "core" / "api.js",
+        REPO_ROOT / "web" / "js" / "core" / "auth-session.js",
+        REPO_ROOT / "web" / "js" / "auth-login.js",
+        REPO_ROOT / "web" / "js" / "portal" / "portal-main.js",
+        REPO_ROOT / "web" / "js" / "portal" / "orders-tab.js",
+        REPO_ROOT / "web" / "js" / "portal" / "upload-tab.js",
+        REPO_ROOT / "web" / "js" / "portal" / "face-id-tab.js",
+        REPO_ROOT / "web" / "js" / "portal" / "notifications-tab.js",
+    ]
+    for mod in expected_modules:
+        assert mod.exists(), f"Missing modular asset: {mod}"
+
 
 
 

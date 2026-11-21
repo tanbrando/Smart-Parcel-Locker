@@ -97,6 +97,16 @@ chmod +x setup.sh run_all.sh
 ./run_all.sh         # Physical hardware mode
 ./run_all.sh --mock  # Interactive CLI mock mode
 ```
+
+#### Face ID camera on phones (HTTPS)
+Browsers only allow live camera access on HTTPS or `localhost`. To enroll Face ID with the live alignment HUD from a phone or another laptop on the LAN:
+```bash
+./run_all.sh --https               # HTTP :8000 (Edge) + HTTPS :8443 (self-signed cert in certs/)
+./run_all.sh --server-only --https --https-port 9443
+```
+Open `https://<LAN_IP>:8443/portal` and accept the certificate warning once (iPhone Safari: *Show Details → visit this website*). The Edge controller keeps using `http://<host>:8000`.
+Without HTTPS, the Face ID tab falls back to the phone's native camera to capture each of the 5 angles.
+
 ### 3. Run Tests
 ```bash
 pytest tests/
