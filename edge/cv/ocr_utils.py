@@ -435,12 +435,6 @@ def parse_shopee_screenshot_lines(lines: List[str]) -> Dict[str, Any]:
             continue
 
         if in_shipping_section:
-            if ":" in line:
-                after_colon = line.split(":", 1)[1].strip()
-                cand = extract_tracking_number(after_colon) or after_colon.split()[0]
-                if cand and len(cand) >= 8:
-                    tracking_number = cand.upper()
-                    break
             cand = extract_tracking_number(line)
             if cand:
                 tracking_number = cand
