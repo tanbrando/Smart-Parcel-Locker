@@ -73,19 +73,18 @@
             <div class="sim-step-title"><span data-fa="camera"></span> 1. Quét đơn</div>
             <div class="input-row" style="margin-bottom:8px;">
               <input type="text" id="simTracking" class="form-control" placeholder="Mã vận đơn" value="SPXVN048291048" title="Mã vận đơn">
-              <input type="number" id="simOcrWeight" class="form-control narrow" placeholder="g" value="520" title="KL OCR (g)">
             </div>
             <button onclick="simEdgeVerify()" class="action-pill-btn secondary sm" title="POST /pi/verify-package"><span data-fa="play"></span> Quét</button>
           </div>
 
           <div class="pipeline-stage" style="margin-bottom:12px;">
-            <div class="sim-step-title"><span data-fa="weight-hanging"></span> 2. Đặt hàng &amp; cân</div>
+            <div class="sim-step-title"><span data-fa="ruler"></span> 2. Đặt hàng &amp; đo HC-SR04</div>
             <div class="input-row" style="margin-bottom:8px;">
               <input type="number" id="simOrderId" class="form-control narrow" placeholder="Order" value="1" title="Order ID">
-              <input type="number" id="simLockerNum" class="form-control narrow" placeholder="Tủ" value="1" title="Ngăn tủ số">
-              <input type="number" id="simDeltaWeight" class="form-control" placeholder="Cân nặng (g)" value="495" title="Cân nặng thực tế (g)">
+              <input type="number" id="simLockerNum" class="form-control narrow" placeholder="Tủ" value="1" title="Ngăn tủ số (1-4)">
+              <input type="number" step="0.5" id="simDistanceCm" class="form-control" placeholder="Khoảng cách (cm)" value="14" title="Khoảng cách HC-SR04 (cm) — Tủ trống: 35 cm">
             </div>
-            <button onclick="simEdgeDeposit()" class="action-pill-btn secondary sm" title="POST /pi/confirm-deposit"><span data-fa="play"></span> Cân</button>
+            <button onclick="simEdgeDeposit()" class="action-pill-btn secondary sm" title="POST /pi/confirm-deposit"><span data-fa="play"></span> Đo &amp; Xác nhận</button>
           </div>
 
           <div class="pipeline-stage">

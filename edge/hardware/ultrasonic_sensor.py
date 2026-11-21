@@ -43,6 +43,7 @@ class UltrasonicSensor:
         self.occupied_margin_cm = occupied_margin_cm
         self.trig_pins: Dict[int, int] = dict(ULTRASONIC_TRIG_PINS)
         self.echo_pins: Dict[int, int] = dict(ULTRASONIC_ECHO_PINS)
+        self.baselines_cm: Dict[int, float] = {k: baseline_empty_cm for k in self.trig_pins}
 
         # Mock distance storage for testing
         self._mock_distance_cm: Dict[int, Optional[float]] = {k: baseline_empty_cm for k in self.trig_pins}
@@ -54,13 +55,17 @@ class UltrasonicSensor:
             self._setup_hardware()
 
     def _setup_hardware(self):
+        GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
+        configured_trigs = set()
         for locker_id in self.trig_pins:
             t_pin = self.trig_pins[locker_id]
             e_pin = self.echo_pins[locker_id]
-            GPIO.setup(t_pin, GPIO.OUT)
+            if t_pin not in configured_trigs:
+                GPIO.setup(t_pin, GPIO.OUT)
+                GPIO.output(t_pin, False)
+                configured_trigs.add(t_pin)
             GPIO.setup(e_pin, GPIO.IN)
-            GPIO.output(t_pin, False)
             logger.info("Locker %d Ultrasonic pins: TRIG=%d, ECHO=%d", locker_id, t_pin, e_pin)
         time.sleep(0.05)  # Let sensor settle
 
@@ -88,12 +93,12 @@ class UltrasonicSensor:
         time.sleep(0.00001)  # 10 microseconds
         GPIO.output(t_pin, False)
 
-        pulse_start = time.time()
+        pulse_start = time.perf_counter()
         timeout_start = pulse_start + ULTRASONIC_TIMEOUT_SEC
 
         # 2. Wait for ECHO to go HIGH
         while GPIO.input(e_pin) == 0:
-            pulse_start = time.time()
+            pulse_start = time.perf_counter()
             if pulse_start > timeout_start:
                 logger.warning("Ultrasonic sensor timeout waiting for echo start on locker %d", locker_id)
                 return None
@@ -102,7 +107,7 @@ class UltrasonicSensor:
         pulse_end = pulse_start
         timeout_end = pulse_start + ULTRASONIC_TIMEOUT_SEC
         while GPIO.input(e_pin) == 1:
-            pulse_end = time.time()
+            pulse_end = time.perf_counter()
             if pulse_end > timeout_end:
                 logger.warning("Ultrasonic sensor timeout waiting for echo end on locker %d", locker_id)
                 return None
@@ -151,17 +156,18 @@ class UltrasonicSensor:
 
     def calibrate_empty_baseline(self, locker_id: int = 1, samples: int = 20) -> float:
         """
-        Measures empty locker baseline distance (cm).
-        Used during hardware setup/calibration to save into config.
+        Measures empty locker baseline distance (cm) for a specific locker compartment.
         """
         logger.info("Calibrating empty locker baseline for locker %d (%d samples)...", locker_id, samples)
         d = self.measure_distance_cm(locker_id, samples=samples, sample_delay_sec=0.03)
         if d is not None and d > 0:
+            self.baselines_cm[locker_id] = d
             self.baseline_empty_cm = d
             logger.info("Calibrated baseline for locker %d: %.2f cm", locker_id, d)
             return d
-        logger.warning("Calibration failed, keeping default baseline: %.2f cm", self.baseline_empty_cm)
-        return self.baseline_empty_cm
+        fallback = self.baselines_cm.get(locker_id, self.baseline_empty_cm)
+        logger.warning("Calibration failed, keeping default baseline: %.2f cm", fallback)
+        return fallback
 
     def is_locker_occupied(
         self,
@@ -170,9 +176,10 @@ class UltrasonicSensor:
     ) -> OccupancyResult:
         """
         Determines whether the locker contains a parcel using debounced consecutive readings.
-        Condition for occupied: distance < (baseline_empty_cm - occupied_margin_cm).
+        Condition for occupied: distance < (baseline_cm - occupied_margin_cm).
         """
-        threshold_cm = self.baseline_empty_cm - self.occupied_margin_cm
+        baseline_cm = self.baselines_cm.get(locker_id, self.baseline_empty_cm)
+        threshold_cm = baseline_cm - self.occupied_margin_cm
         consecutive_results: List[bool] = []
         last_distance: Optional[float] = None
 
@@ -183,7 +190,7 @@ class UltrasonicSensor:
                 return OccupancyResult(
                     occupied=False,
                     distance_cm=None,
-                    baseline_cm=self.baseline_empty_cm,
+                    baseline_cm=baseline_cm,
                     confidence=0.0,
                     error="SENSOR_TIMEOUT",
                     timestamp=datetime.now(timezone.utc),
@@ -204,7 +211,7 @@ class UltrasonicSensor:
             locker_id,
             final_occupied,
             last_distance,
-            self.baseline_empty_cm,
+            baseline_cm,
             threshold_cm,
             confidence,
         )
@@ -212,7 +219,7 @@ class UltrasonicSensor:
         return OccupancyResult(
             occupied=final_occupied,
             distance_cm=last_distance,
-            baseline_cm=self.baseline_empty_cm,
+            baseline_cm=baseline_cm,
             confidence=round(confidence, 2),
             error=None,
             timestamp=datetime.now(timezone.utc),

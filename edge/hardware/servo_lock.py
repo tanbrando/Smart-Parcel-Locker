@@ -16,6 +16,7 @@ from edge.config import (
     SERVO_PWM_FREQUENCY,
     SERVO_LOCKED_ANGLE,
     SERVO_UNLOCKED_ANGLE,
+    ENABLE_DOOR_SWITCH,
     DOOR_SWITCH_PINS,
     DOOR_SWITCH_CLOSED_ACTIVE_LOW,
     MOCK_HARDWARE,
@@ -63,6 +64,7 @@ class ServoLockController:
             self._setup_hardware()
 
     def _setup_hardware(self):
+        GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
         # 1. Setup Servos
         for locker_id, pin in self.servo_pins.items():
@@ -76,10 +78,13 @@ class ServoLockController:
             self.pwm_instances[locker_id] = pwm
             logger.info("Locker %d Servo initialized on GPIO %d (UNLOCKED at %.1f deg)", locker_id, pin, SERVO_UNLOCKED_ANGLE)
 
-        # 2. Setup Door Reed/Limit Switches (Internal Pull-Up enabled)
-        for locker_id, pin in self.door_switch_pins.items():
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            logger.info("Locker %d Door switch initialized on GPIO %d (PUD_UP)", locker_id, pin)
+        # 2. Setup Door Reed/Limit Switches (Internal Pull-Up enabled) if enabled
+        if ENABLE_DOOR_SWITCH:
+            for locker_id, pin in self.door_switch_pins.items():
+                GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+                logger.info("Locker %d Door switch initialized on GPIO %d (PUD_UP)", locker_id, pin)
+        else:
+            logger.info("ENABLE_DOOR_SWITCH=false: Door switch sensors disabled (manual close grace delay active).")
 
     def set_mock_door_closed(self, closed: bool, locker_id: int = 1):
         """Allows tests to simulate door physically open or closed."""
@@ -92,6 +97,9 @@ class ServoLockController:
         """
         if self.mock_mode:
             return self._mock_door_closed.get(locker_id, True)
+
+        if not ENABLE_DOOR_SWITCH:
+            return True
 
         pin = self.door_switch_pins.get(locker_id)
         if pin is None:
@@ -113,6 +121,11 @@ class ServoLockController:
         """Polls reed/limit switch until door is closed or timeout expires."""
         if self.mock_mode:
             return self.is_door_closed(locker_id)
+
+        if not ENABLE_DOOR_SWITCH:
+            logger.info("Door switch disabled: waiting 4.0s for courier to place parcel and close Locker %d...", locker_id)
+            time.sleep(4.0)
+            return True
 
         deadline = time.time() + max(0.1, timeout_seconds)
         while time.time() < deadline:

@@ -46,33 +46,43 @@ from server.routers import orders, edge, lockers, telegram, auth
 from server.services.telegram import start_telegram_polling_safe
 
 
-def _ensure_user_schema_columns():
-    """Safely adds new auth/face columns to existing SQLite users table if missing."""
+def _ensure_schema_columns():
+    """Safely adds new auth/face/HC-SR04 columns to existing SQLite tables if missing."""
+    table_migrations = {
+        "users": [
+            ("role", "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'USER'"),
+            ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(128) NOT NULL DEFAULT '123456'"),
+            ("face_auth_enabled", "ALTER TABLE users ADD COLUMN face_auth_enabled INTEGER NOT NULL DEFAULT 0"),
+            ("face_registered", "ALTER TABLE users ADD COLUMN face_registered INTEGER NOT NULL DEFAULT 0"),
+            ("face_data_json", "ALTER TABLE users ADD COLUMN face_data_json TEXT"),
+        ],
+        "lockers": [
+            ("current_distance_cm", "ALTER TABLE lockers ADD COLUMN current_distance_cm FLOAT DEFAULT 35.0"),
+            ("empty_distance_cm", "ALTER TABLE lockers ADD COLUMN empty_distance_cm FLOAT NOT NULL DEFAULT 35.0"),
+        ],
+        "orders": [
+            ("measured_distance_cm", "ALTER TABLE orders ADD COLUMN measured_distance_cm FLOAT"),
+        ],
+    }
     try:
         with engine.connect() as conn:
-            result = conn.execute(text("PRAGMA table_info(users)"))
-            existing_cols = {row[1] for row in result.fetchall()}
-            if not existing_cols:
-                return
-            migrations = [
-                ("role", "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'USER'"),
-                ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(128) NOT NULL DEFAULT '123456'"),
-                ("face_auth_enabled", "ALTER TABLE users ADD COLUMN face_auth_enabled INTEGER NOT NULL DEFAULT 0"),
-                ("face_registered", "ALTER TABLE users ADD COLUMN face_registered INTEGER NOT NULL DEFAULT 0"),
-                ("face_data_json", "ALTER TABLE users ADD COLUMN face_data_json TEXT"),
-            ]
-            for col_name, ddl in migrations:
-                if col_name not in existing_cols:
-                    conn.execute(text(ddl))
+            for table_name, migrations in table_migrations.items():
+                result = conn.execute(text(f"PRAGMA table_info({table_name})"))
+                existing_cols = {row[1] for row in result.fetchall()}
+                if not existing_cols:
+                    continue
+                for col_name, ddl in migrations:
+                    if col_name not in existing_cols:
+                        conn.execute(text(ddl))
             conn.commit()
     except Exception:
         pass
 
 
 def init_database_tables():
-    """Initializes tables, migrates new columns safely, and seeds default users & physical lockers."""
+    """Initializes tables, migrates new columns safely, and seeds default users & 4 physical lockers."""
     Base.metadata.create_all(bind=engine)
-    _ensure_user_schema_columns()
+    _ensure_schema_columns()
     db = SessionLocal()
     try:
         # Seed default users
@@ -114,15 +124,22 @@ def init_database_tables():
             db.add(admin_user)
             db.commit()
 
-        # Seed default lockers
-        if db.query(Locker).count() == 0:
-            default_lockers = [
-                Locker(id=1, locker_number=1, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
-                Locker(id=2, locker_number=2, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
-                Locker(id=3, locker_number=3, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
-                Locker(id=4, locker_number=4, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
-            ]
-            db.add_all(default_lockers)
+        # Ensure all 4 physical lockers (#1..#4) exist
+        existing_locker_nums = {row[0] for row in db.query(Locker.locker_number).all()}
+        missing_lockers = [
+            Locker(
+                locker_number=num,
+                current_weight=0,
+                max_weight=5000,
+                current_distance_cm=35.0,
+                empty_distance_cm=35.0,
+                status=LockerStatus.EMPTY,
+            )
+            for num in (1, 2, 3, 4)
+            if num not in existing_locker_nums
+        ]
+        if missing_lockers:
+            db.add_all(missing_lockers)
             db.commit()
     finally:
         db.close()

@@ -124,15 +124,19 @@ class EdgeApiClient:
         self,
         order_id: int,
         locker_number: int,
-        delta_weight: int,
+        delta_weight: int = 0,
+        distance_cm: Optional[float] = None,
+        empty_distance_cm: Optional[float] = None,
         image_base64: Optional[str] = None,
     ) -> DepositConfirmationResponse:
-        """Informs server that courier has placed parcel and door is closed."""
+        """Informs server that courier has placed parcel, measured by HC-SR04, and door is closed."""
         url = f"{self.base_url}/api/v1/pi/confirm-deposit"
         payload = DepositConfirmationRequest(
             order_id=order_id,
             locker_number=locker_number,
             delta_weight=delta_weight,
+            distance_cm=distance_cm,
+            empty_distance_cm=empty_distance_cm,
             image_base64=image_base64,
         ).model_dump()
 

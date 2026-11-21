@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     String,
     Integer,
+    Float,
     BigInteger,
     Text,
     DateTime,
@@ -57,6 +58,8 @@ class Locker(Base):
     locker_number = Column(Integer, unique=True, index=True, nullable=False)
     current_weight = Column(Integer, default=0, nullable=False)
     max_weight = Column(Integer, default=5000, nullable=False)
+    current_distance_cm = Column(Float, default=35.0, nullable=True)
+    empty_distance_cm = Column(Float, default=35.0, nullable=False)
     status = Column(SAEnum(LockerStatus), default=LockerStatus.EMPTY, nullable=False)
     updated_at = Column(
         DateTime,
@@ -78,6 +81,7 @@ class Order(Base):
     order_code = Column(String(50), nullable=True)
     expected_weight = Column(Integer, default=0, nullable=False)
     actual_weight = Column(Integer, nullable=True)
+    measured_distance_cm = Column(Float, nullable=True)
     otp_code = Column(String(6), index=True, nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
     status = Column(SAEnum(OrderStatus), default=OrderStatus.REGISTERED, nullable=False)
