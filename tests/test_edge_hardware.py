@@ -196,6 +196,21 @@ def test_keypad_preserves_initial_digit():
     assert keypad.get_pin_input(mock_input="582194", initial_digits="5") == "582194"
 
 
+def test_partial_hardware_mode_ultrasonic_disabled_and_active_lockers():
+    """Verifies ENABLE_ULTRASONIC=false simulates occupied (14cm) and active_lockers filters servos."""
+    sensor = UltrasonicSensor(mock_mode=False, baseline_empty_cm=35.0, occupied_margin_cm=5.0, enabled=False)
+    occ = sensor.is_locker_occupied(locker_id=3)
+    assert occ.occupied is True
+    assert occ.distance_cm == 14.0
+    assert occ.error is None
+
+    lock = ServoLockController(mock_mode=True, active_lockers=[3, 4])
+    assert lock.active_lockers == [3, 4]
+    assert lock.unlock_door(3) is True
+    assert lock.lock_door(4) is True
+
+
+
 
 if __name__ == "__main__":
     tests = [

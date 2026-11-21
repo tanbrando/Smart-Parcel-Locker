@@ -12,6 +12,7 @@ from contracts.schemas import OccupancyResult
 from edge.config import (
     BASELINE_EMPTY_CM,
     OCCUPIED_MARGIN_CM,
+    ENABLE_ULTRASONIC,
     ULTRASONIC_TRIG_PINS,
     ULTRASONIC_ECHO_PINS,
     ULTRASONIC_TIMEOUT_SEC,
@@ -37,20 +38,26 @@ class UltrasonicSensor:
         mock_mode: bool = MOCK_HARDWARE,
         baseline_empty_cm: float = BASELINE_EMPTY_CM,
         occupied_margin_cm: float = OCCUPIED_MARGIN_CM,
+        enabled: bool = ENABLE_ULTRASONIC,
     ):
-        self.mock_mode = mock_mode or not RPI_AVAILABLE
+        self.enabled = enabled
+        self.mock_mode = mock_mode or not RPI_AVAILABLE or not self.enabled
         self.baseline_empty_cm = baseline_empty_cm
         self.occupied_margin_cm = occupied_margin_cm
         self.trig_pins: Dict[int, int] = dict(ULTRASONIC_TRIG_PINS)
         self.echo_pins: Dict[int, int] = dict(ULTRASONIC_ECHO_PINS)
         self.baselines_cm: Dict[int, float] = {k: baseline_empty_cm for k in self.trig_pins}
 
-        # Mock distance storage for testing
-        self._mock_distance_cm: Dict[int, Optional[float]] = {k: baseline_empty_cm for k in self.trig_pins}
+        # When ENABLE_ULTRASONIC=false (partial hardware test), simulate parcel detected (14cm)
+        default_mock_dist = 14.0 if not self.enabled else baseline_empty_cm
+        self._mock_distance_cm: Dict[int, Optional[float]] = {k: default_mock_dist for k in self.trig_pins}
         self._mock_error: Optional[str] = None
 
         if self.mock_mode:
-            logger.info("UltrasonicSensor initialized in MOCK mode.")
+            if not self.enabled:
+                logger.info("UltrasonicSensor disabled (ENABLE_ULTRASONIC=false): simulating occupied at 14.0 cm.")
+            else:
+                logger.info("UltrasonicSensor initialized in MOCK mode.")
         else:
             self._setup_hardware()
 

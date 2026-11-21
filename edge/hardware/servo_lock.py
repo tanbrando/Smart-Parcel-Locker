@@ -8,10 +8,11 @@ Features intelligent locking:
 """
 import time
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
 
 from contracts.schemas import LockState, LockDecision
 from edge.config import (
+    ACTIVE_LOCKER_IDS,
     LOCKER_SERVO_PINS,
     SERVO_PWM_FREQUENCY,
     SERVO_LOCKED_ANGLE,
@@ -44,10 +45,11 @@ def angle_to_duty_cycle(angle: float) -> float:
 class ServoLockController:
     """Controls door locking mechanisms via Servo Motors and checks door contact switches."""
 
-    def __init__(self, mock_mode: bool = MOCK_HARDWARE):
+    def __init__(self, mock_mode: bool = MOCK_HARDWARE, active_lockers: Optional[List[int]] = None):
         self.mock_mode = mock_mode or not RPI_AVAILABLE
         self.servo_pins: Dict[int, int] = dict(LOCKER_SERVO_PINS)
         self.door_switch_pins: Dict[int, int] = dict(DOOR_SWITCH_PINS)
+        self.active_lockers: List[int] = list(active_lockers) if active_lockers is not None else list(ACTIVE_LOCKER_IDS)
 
         # Default state: Empty lockers are UNLOCKED (per business requirements in TASK)
         self.lock_states: Dict[int, LockState] = {k: LockState.UNLOCKED for k in self.servo_pins}
@@ -66,8 +68,11 @@ class ServoLockController:
     def _setup_hardware(self):
         GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
-        # 1. Setup Servos
+        # 1. Setup Servos sequentially (only for active_lockers to avoid touching unwired pins)
         for locker_id, pin in self.servo_pins.items():
+            if locker_id not in self.active_lockers:
+                logger.info("Locker %d Servo skipped (not in ACTIVE_LOCKER_IDS=%s)", locker_id, self.active_lockers)
+                continue
             GPIO.setup(pin, GPIO.OUT)
             pwm = GPIO.PWM(pin, SERVO_PWM_FREQUENCY)
             duty = angle_to_duty_cycle(SERVO_UNLOCKED_ANGLE)
@@ -81,6 +86,8 @@ class ServoLockController:
         # 2. Setup Door Reed/Limit Switches (Internal Pull-Up enabled) if enabled
         if ENABLE_DOOR_SWITCH:
             for locker_id, pin in self.door_switch_pins.items():
+                if locker_id not in self.active_lockers:
+                    continue
                 GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
                 logger.info("Locker %d Door switch initialized on GPIO %d (PUD_UP)", locker_id, pin)
         else:

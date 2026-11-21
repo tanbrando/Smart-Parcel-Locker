@@ -68,6 +68,16 @@ SERVO_LOCKED_ANGLE: float = 0.0         # Angle when door is locked (0 degrees)
 SERVO_UNLOCKED_ANGLE: float = 90.0      # Angle when door is open (90 degrees)
 DOOR_UNLOCK_DURATION_SEC: float = 4.0   # Duration to keep unlocked before returning to locked
 
+# Partial-hardware testing switches (useful before wiring all 4 compartments / sensors)
+# ACTIVE_LOCKER_IDS controls which locker servos are initialized on GPIO (default: 1,2,3,4)
+_raw_active_lockers = os.getenv("ACTIVE_LOCKER_IDS", "1,2,3,4")
+ACTIVE_LOCKER_IDS: List[int] = [
+    int(tok.strip()) for tok in _raw_active_lockers.split(",") if tok.strip().isdigit()
+] or [1, 2, 3, 4]
+
+# Set ENABLE_ULTRASONIC=false to simulate parcel presence (14cm) when HC-SR04 is not wired yet.
+ENABLE_ULTRASONIC: bool = os.getenv("ENABLE_ULTRASONIC", "true").lower() in ("true", "1", "yes")
+
 # Door Reed Switch / Limit Switch Sensor (Door closed detection)
 # Active LOW: Grounded when magnet contacts switch (door closed)
 # Set ENABLE_DOOR_SWITCH=false if your physical enclosure does not have magnetic reed switches wired yet.
