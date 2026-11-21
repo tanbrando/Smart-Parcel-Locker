@@ -6,17 +6,17 @@ from contracts.schemas import (
     DepositAction,
     DepositStatus,
     LockerAuth,
+    OccupancyResult,
     ScanResult,
-    WeightMeasurement,
     SystemState,
 )
 from edge.cv.ocr_utils import extract_tracking_number, extract_weight_grams
 from edge.cv.scanner import PackageScanner
-from edge.hardware.hx711_loadcell import LoadCellController, measure_weight_delta
+from edge.hardware.ultrasonic_sensor import UltrasonicSensor, is_locker_occupied
 from edge.hardware.lock_controller import LockController, open_locker_door
 from edge.hardware.indicators import IndicatorController
 from edge.core.keypad import KeypadReader
-from edge.core.fsm import LockerStateMachine, verify_deposit_integrity
+from edge.core.fsm import LockerStateMachine, verify_occupancy_integrity
 
 
 def test_tracking_regex_parsers():
@@ -47,41 +47,13 @@ def test_package_scanner_mock_contract():
     assert res.confidence >= 0.0
 
 
-def test_loadcell_controller_mock_contract():
-    loadcell = LoadCellController(mock_mode=True)
-    loadcell.tare(locker_id=1)
-    measurement = loadcell.measure_weight_delta(locker_id=1, expected_weight=500.0)
-    assert isinstance(measurement, WeightMeasurement)
-    assert measurement.locker_id == 1
-    assert measurement.current_weight_grams > 0.0
-    assert measurement.delta_grams == measurement.current_weight_grams
-    assert measurement.is_stable is True
-
-    # Second reading with additional parcel weight should report accurate delta (ΔW)
-    measurement_2 = loadcell.measure_weight_delta(locker_id=1, expected_weight=800.0)
-    assert measurement_2.delta_grams == round(
-        measurement_2.current_weight_grams - measurement.current_weight_grams, 2
-    )
-
-
-def test_loadcell_noise_filtering_algorithm():
-    # 10 samples where 2 extreme spikes (-99999.0 and +999999.0) occur due to HX711 noise
-    noisy_samples = [
-        -99999.0,
-        210000.0,
-        210050.0,
-        209980.0,
-        210010.0,
-        210020.0,
-        209990.0,
-        210000.0,
-        210010.0,
-        999999.0,
-    ]
-    filtered_mean, std_dev = LoadCellController.filter_samples(noisy_samples, trim_ratio=0.2)
-    # Outlier spikes should be completely removed; mean should be ~210007.5 with very low std_dev
-    assert 209950.0 <= filtered_mean <= 210060.0
-    assert std_dev < 50.0
+def test_ultrasonic_controller_mock_contract():
+    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=5.0)
+    sensor.set_mock_distance(18.0, locker_id=1)
+    occ = sensor.is_locker_occupied(locker_id=1)
+    assert isinstance(occ, OccupancyResult)
+    assert occ.occupied is True
+    assert occ.distance_cm == 18.0
 
 
 def test_lock_controller_mock_contract():
@@ -95,9 +67,11 @@ def test_lock_controller_mock_contract():
 def test_hardware_module_level_contract_functions():
     # Direct contract functions required by Person 2 -> Person 3 specification
     assert open_locker_door(locker_id=2, duration_sec=0.05) is True
-    w_res = measure_weight_delta(locker_id=2, expected_weight=350.0)
-    assert isinstance(w_res, WeightMeasurement)
-    assert w_res.locker_id == 2
+    import edge.hardware.ultrasonic_sensor as us_mod
+    us_mod.get_ultrasonic_sensor().set_mock_distance(16.0, locker_id=2)
+    occ_res = is_locker_occupied(locker_id=2)
+    assert isinstance(occ_res, OccupancyResult)
+    assert occ_res.occupied is True
 
 
 def test_indicator_controller_lcd_i2c_and_buzzer():
@@ -155,33 +129,21 @@ def test_embedded_contracts_are_synchronized():
     assert scan.success is True
     assert scan.ocr_weight == 500
 
-    measurement = WeightMeasurement(
-        locker_id=1,
-        current_weight_grams=510,
-        delta_grams=510,
-        is_stable=True,
-    )
-    assert measurement.after_weight == 510
-    assert measurement.delta_weight == 510
-
 
 def test_deposit_integrity_rejects_empty_and_accepts_valid_package():
-    auth = LockerAuth(
-        is_allowed=True,
-        locker_id=1,
-        expected_weight=500,
-        weight_tolerance=20,
-    )
-    empty = verify_deposit_integrity(
-        auth,
-        WeightMeasurement(locker_id=1, delta_weight=5, is_stable=True),
+    empty = verify_occupancy_integrity(
+        OccupancyResult(occupied=False, distance_cm=35.0, baseline_cm=35.0, confidence=1.0),
     )
     assert empty.status == DepositStatus.EMPTY_DEPOSIT
     assert empty.action == DepositAction.TRIGGER_BUZZER_ALARM
 
-    valid = verify_deposit_integrity(
-        auth,
-        WeightMeasurement(locker_id=1, delta_weight=510, is_stable=True),
+    sensor_err = verify_occupancy_integrity(
+        OccupancyResult(occupied=False, distance_cm=None, baseline_cm=35.0, confidence=0.0, error="SENSOR_TIMEOUT"),
+    )
+    assert sensor_err.action == DepositAction.RETRY_MEASUREMENT
+
+    valid = verify_occupancy_integrity(
+        OccupancyResult(occupied=True, distance_cm=18.0, baseline_cm=35.0, confidence=1.0),
     )
     assert valid.status == DepositStatus.SUCCESS
     assert valid.action == DepositAction.CONFIRM_SERVER_AND_LOCK
@@ -259,6 +221,9 @@ def test_edge_api_client_and_fsm_full_workflow():
     )
 
     fsm.api_client = mock_api
+    # Simulate courier placing parcel inside Locker 1 (distance drops below threshold)
+    fsm.ultrasonic.set_mock_distance(18.0, locker_id=1)
+    fsm.lock.set_mock_door_closed(True, locker_id=1)
 
     from unittest.mock import patch
     with patch("time.sleep", return_value=None):
@@ -295,12 +260,11 @@ def test_ocr_isolated_resilience_and_off_mode():
     ocr_utils._PADDLE_CRASHED = False
 
 
-def test_weight_validation_and_expected_weight_mapping():
+def test_ultrasonic_occupancy_and_api_mapping():
     from unittest.mock import patch
     from edge.core.api_client import EdgeApiClient
     from contracts.schemas import PackageVerificationResponse
 
-    # 1. Server sends max_allowed_weight=5000 (locker capacity) and declared_weight_grams=500 (order weight)
     resp = PackageVerificationResponse(
         action="UNLOCK_DOOR",
         locker_number=1,
@@ -311,26 +275,8 @@ def test_weight_validation_and_expected_weight_mapping():
     client = EdgeApiClient()
     with patch.object(client, "verify_package", return_value=resp):
         auth = client.request_door_unlock(ScanResult(tracking_number="SPX123", ocr_weight=500))
-    assert auth.expected_weight == 500.0
-    assert auth.max_allowed_weight == 5000.0
-
-    # 2. Relaxed mode: valid weight within [20g, 5000g] passes even if deviating from expected_weight
-    res_ok = verify_deposit_integrity(
-        auth,
-        WeightMeasurement(locker_id=1, delta_weight=250.0, is_stable=True),
-        strict_expected_match=False,
-    )
-    assert res_ok.status == DepositStatus.SUCCESS
-    assert res_ok.action == DepositAction.CONFIRM_SERVER_AND_LOCK
-
-    # 3. Overweight > max_allowed_weight (5000g) still rejects
-    res_over = verify_deposit_integrity(
-        auth,
-        WeightMeasurement(locker_id=1, delta_weight=5500.0, is_stable=True),
-        strict_expected_match=False,
-    )
-    assert res_over.status == DepositStatus.WEIGHT_MISMATCH
-    assert res_over.action == DepositAction.TRIGGER_BUZZER_ALARM
+    assert auth.is_allowed is True
+    assert auth.locker_id == 1
 
 
 def test_custom_keypad_matrix_layout():
@@ -352,13 +298,15 @@ if __name__ == "__main__":
         test_tracking_regex_parsers,
         test_weight_regex_parsers,
         test_package_scanner_mock_contract,
-        test_loadcell_controller_mock_contract,
-        test_loadcell_noise_filtering_algorithm,
+        test_ultrasonic_controller_mock_contract,
         test_lock_controller_mock_contract,
         test_hardware_module_level_contract_functions,
         test_indicator_controller_lcd_i2c_and_buzzer,
         test_keypad_rate_limiter_and_lockout,
         test_fsm_initial_state,
+        test_deposit_integrity_rejects_empty_and_accepts_valid_package,
+        test_edge_api_client_and_fsm_full_workflow,
+        test_ultrasonic_occupancy_and_api_mapping,
     ]
     print(f"Running {len(test_functions)} Edge Contract & Hardware tests...\n")
     for fn in test_functions:

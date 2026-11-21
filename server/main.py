@@ -120,6 +120,7 @@ def init_database_tables():
                 Locker(id=1, locker_number=1, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
                 Locker(id=2, locker_number=2, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
                 Locker(id=3, locker_number=3, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
+                Locker(id=4, locker_number=4, current_weight=0, max_weight=5000, status=LockerStatus.EMPTY),
             ]
             db.add_all(default_lockers)
             db.commit()

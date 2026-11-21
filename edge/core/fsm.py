@@ -1,6 +1,7 @@
 """
 Finite State Machine (FSM) Module [Person 3].
-Orchestrates hardware drivers, computer vision, and cloud API into a cohesive locker lifecycle.
+Orchestrates hardware drivers (Ultrasonic Sensor, Servo Lock, Indicators),
+computer vision, and cloud API into a cohesive locker lifecycle.
 """
 import time
 import logging
@@ -10,14 +11,13 @@ from contracts.schemas import (
     DepositAction,
     DepositDecision,
     DepositStatus,
+    OccupancyResult,
     ScanResult,
     SystemState,
-    WeightMeasurement,
 )
-from edge.config import WEIGHT_TOLERANCE_GRAMS, STRICT_WEIGHT_MATCH
 from edge.cv.scanner import PackageScanner
-from edge.hardware.hx711_loadcell import LoadCellController
-from edge.hardware.lock_controller import LockController
+from edge.hardware.ultrasonic_sensor import UltrasonicSensor, get_ultrasonic_sensor
+from edge.hardware.servo_lock import ServoLockController, get_servo_lock
 from edge.hardware.indicators import IndicatorController
 from edge.core.keypad import KeypadReader
 from edge.core.api_client import EdgeApiClient
@@ -25,55 +25,26 @@ from edge.core.api_client import EdgeApiClient
 logger = logging.getLogger("edge.core.fsm")
 
 
-def verify_deposit_integrity(
-    auth,
-    weight: WeightMeasurement,
-    minimum_weight_grams: float = 20.0,
-    strict_expected_match: bool = STRICT_WEIGHT_MATCH,
-) -> DepositDecision:
-    """Apply edge-side parcel weight validation (anti-empty, overload, and optional strict match)."""
-    if not weight.is_stable:
+def verify_occupancy_integrity(occupancy: OccupancyResult) -> DepositDecision:
+    """Validate ultrasonic occupancy result before locking and confirming deposit."""
+    if occupancy.error:
         return DepositDecision(
             status=DepositStatus.UNSTABLE_WEIGHT,
             action=DepositAction.RETRY_MEASUREMENT,
-            message="Weight reading is not stable.",
+            message=f"Ultrasonic sensor error: {occupancy.error}",
         )
 
-    measured = weight.delta_weight or weight.delta_grams
-    if measured < minimum_weight_grams:
+    if not occupancy.occupied:
         return DepositDecision(
             status=DepositStatus.EMPTY_DEPOSIT,
             action=DepositAction.TRIGGER_BUZZER_ALARM,
             message="No parcel was detected in the locker.",
         )
 
-    max_allowed = getattr(auth, "max_allowed_weight", None)
-    if max_allowed and measured > max_allowed:
-        return DepositDecision(
-            status=DepositStatus.WEIGHT_MISMATCH,
-            action=DepositAction.TRIGGER_BUZZER_ALARM,
-            message=f"Overweight: {measured:.1f}g exceeds locker max {max_allowed:.1f}g.",
-        )
-
-    expected = getattr(auth, "expected_weight", None)
-    tolerance = getattr(auth, "weight_tolerance", WEIGHT_TOLERANCE_GRAMS)
-    if expected and abs(measured - expected) > tolerance:
-        if strict_expected_match:
-            return DepositDecision(
-                status=DepositStatus.WEIGHT_MISMATCH,
-                action=DepositAction.TRIGGER_BUZZER_ALARM,
-                message=f"Weight mismatch: measured {measured:.1f}g, expected {expected:.1f}g.",
-            )
-        logger.info(
-            "Weight deviation accepted (strict match disabled): measured %.1fg vs expected %.1fg",
-            measured,
-            expected,
-        )
-
     return DepositDecision(
         status=DepositStatus.SUCCESS,
         action=DepositAction.CONFIRM_SERVER_AND_LOCK,
-        message="Parcel deposit verified successfully.",
+        message="Parcel detected in locker successfully.",
     )
 
 
@@ -83,16 +54,16 @@ class LockerStateMachine:
     def __init__(
         self,
         scanner: Optional[PackageScanner] = None,
-        loadcell: Optional[LoadCellController] = None,
-        lock: Optional[LockController] = None,
+        ultrasonic: Optional[UltrasonicSensor] = None,
+        lock: Optional[ServoLockController] = None,
         indicators: Optional[IndicatorController] = None,
         keypad: Optional[KeypadReader] = None,
         api_client: Optional[EdgeApiClient] = None,
     ):
         self.state: SystemState = SystemState.IDLE
         self.scanner = scanner or PackageScanner()
-        self.loadcell = loadcell or LoadCellController()
-        self.lock = lock or LockController()
+        self.ultrasonic = ultrasonic or get_ultrasonic_sensor()
+        self.lock = lock or get_servo_lock()
         self.indicators = indicators or IndicatorController()
         self.keypad = keypad or KeypadReader()
         self.api_client = api_client or EdgeApiClient()
@@ -105,7 +76,7 @@ class LockerStateMachine:
         self.state = new_state
 
     def handle_courier_deposit(self) -> bool:
-        """Executes full courier parcel drop-off workflow."""
+        """Executes full courier parcel drop-off workflow using Ultrasonic + Servo Lock."""
         self.transition_to(SystemState.SCANNING)
         self.indicators.display_message("Courier Deposit", "Show barcode/QR")
 
@@ -136,21 +107,13 @@ class LockerStateMachine:
         order_id = auth.order_id or 0
         logger.info("Package authorized for Locker %d", locker_id)
 
-        # 3. Unlock locker door
+        # 3. Unlock locker door (servo -> UNLOCKED)
         self.transition_to(SystemState.UNLOCKED_DEPOSIT)
         self.indicators.success_sound()
         self.indicators.display_message(f"Locker {locker_id} Open", "Insert Parcel")
+        self.lock.unlock_door(locker_id)
 
-        # Tare before parcel placement
-        self.loadcell.tare(locker_id)
-        self.lock.open_locker_door(locker_id)
-
-        # 4. Measure weight
-        self.transition_to(SystemState.WEIGHING)
-        self.indicators.display_message("Measuring weight", "Please wait...")
-
-        expected_w = auth.expected_weight
-        measurement = self.loadcell.measure_weight_delta(locker_id, expected_weight=expected_w)
+        # 4. Wait for door close & check occupancy via Ultrasonic Sensor
         if not self.lock.wait_for_door_closed(locker_id):
             self.indicators.error_sound()
             self.indicators.display_message("Close Door", "Door not closed")
@@ -159,9 +122,14 @@ class LockerStateMachine:
             self.transition_to(SystemState.IDLE)
             return False
 
-        decision = verify_deposit_integrity(auth, measurement)
+        self.indicators.display_message("Checking Locker", "Please wait...")
+        occupancy = self.ultrasonic.is_locker_occupied(locker_id)
+        decision = verify_occupancy_integrity(occupancy)
+
         if decision.action != DepositAction.CONFIRM_SERVER_AND_LOCK:
-            logger.warning("Deposit rejected by edge integrity check: %s", decision.message)
+            logger.warning("Deposit rejected by ultrasonic check: %s", decision.message)
+            # Keep door UNLOCKED when empty or sensor error (fail-safe)
+            self.lock.unlock_door(locker_id)
             if decision.action == DepositAction.TRIGGER_BUZZER_ALARM:
                 self.indicators.alarm_sound()
             else:
@@ -172,21 +140,22 @@ class LockerStateMachine:
             self.transition_to(SystemState.IDLE)
             return False
 
+        # Parcel detected and door closed -> lock servo
+        self.lock.lock_door(locker_id)
+
         # 5. Confirm deposit to server
-        measured_weight_val = measurement.delta_weight if measurement.delta_weight != 0.0 else measurement.delta_grams
-        measured_int = int(round(measured_weight_val))
         order_id_int = int(order_id) if str(order_id).isdigit() else 0
 
         self.transition_to(SystemState.DEPOSIT_CONFIRMED)
         confirm_res = self.api_client.confirm_deposit(
             order_id=order_id_int,
             locker_number=locker_id,
-            delta_weight=measured_int,
+            delta_weight=0,
         )
 
         if confirm_res.success:
             self.indicators.success_sound()
-            self.indicators.display_message("Deposit Success!", f"Lock{locker_id} OK: {measured_int}g")
+            self.indicators.display_message("Deposit Success!", f"Locker {locker_id} OK")
             logger.info("Deposit successfully completed for order #%s. OTP: %s", order_id, confirm_res.otp_generated)
         else:
             self.indicators.error_sound()
