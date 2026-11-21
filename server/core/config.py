@@ -1,12 +1,14 @@
 """
 Server Configuration Settings using Pydantic Settings.
 """
+import os
 from pathlib import Path
 from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_FACE_MODELS_DIR = REPO_ROOT / "edge" / "models" / "face"
 
 
 class Settings(BaseSettings):
@@ -23,6 +25,11 @@ class Settings(BaseSettings):
     TELEGRAM_DEFAULT_CHAT_ID: Optional[int] = None
     TELEGRAM_BOT_USERNAME: str = "SmartParcelLockerBot"
     ENABLE_TELEGRAM_BOT_POLLING: bool = True
+
+    # Face ID (YuNet + SFace ONNX models & Edge Device Key)
+    FACE_DEVICE_KEY: Optional[str] = None
+    FACE_YUNET: str = str(DEFAULT_FACE_MODELS_DIR / "face_detection_yunet_2023mar.onnx")
+    FACE_SFACE: str = str(DEFAULT_FACE_MODELS_DIR / "face_recognition_sface_2021dec.onnx")
 
     # OTP and Locker rules
     OTP_VALID_HOURS: int = 72
@@ -53,3 +60,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Export configured Face ID env vars into os.environ if not already overridden externally
+if settings.FACE_DEVICE_KEY and not os.environ.get("FACE_DEVICE_KEY"):
+    os.environ["FACE_DEVICE_KEY"] = settings.FACE_DEVICE_KEY
+if settings.FACE_YUNET and not os.environ.get("FACE_YUNET"):
+    os.environ["FACE_YUNET"] = settings.FACE_YUNET
+if settings.FACE_SFACE and not os.environ.get("FACE_SFACE"):
+    os.environ["FACE_SFACE"] = settings.FACE_SFACE

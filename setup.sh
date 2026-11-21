@@ -54,7 +54,7 @@ echo "=========================================================="
 echo "📦 [1/5] Kiểm tra các gói hệ thống (APT)..."
 
 FIXED_PKGS=(
-    git git-lfs curl python3-pip python3-venv python3-dev
+    git git-lfs curl openssl python3-pip python3-venv python3-dev
     libzbar-dev python3-opencv
     libopenjp2-7 libjpeg-dev zlib1g-dev
     tesseract-ocr tesseract-ocr-vie
@@ -224,6 +224,99 @@ if [ ! -f "$SERVER_DIR/.env" ] && [ -f "$SERVER_DIR/.env.example" ]; then
 else
     echo "ℹ️ Giữ nguyên cấu hình $SERVER_DIR/.env hiện tại."
 fi
+
+# 5b. Tự động tải 2 model Face ID (YuNet + SFace ONNX) từ OpenCV Zoo
+FACE_MODELS_DIR="$EDGE_DIR/models/face"
+YUNET_FILE="$FACE_MODELS_DIR/face_detection_yunet_2023mar.onnx"
+SFACE_FILE="$FACE_MODELS_DIR/face_recognition_sface_2021dec.onnx"
+YUNET_URL="https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+SFACE_URL="https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+
+mkdir -p "$FACE_MODELS_DIR"
+if [ ! -f "$YUNET_FILE" ] || [ "$(wc -c < "$YUNET_FILE")" -lt 100000 ]; then
+    echo "📥 Đang tải model phát hiện khuôn mặt YuNet (~230KB)..."
+    curl -fSL --retry 3 "$YUNET_URL" -o "$YUNET_FILE" || echo "⚠️ Không thể tải YuNet (kiểm tra mạng Internet)."
+fi
+if [ ! -f "$SFACE_FILE" ] || [ "$(wc -c < "$SFACE_FILE")" -lt 10000000 ]; then
+    echo "📥 Đang tải model nhận diện khuôn mặt SFace (~38MB)..."
+    curl -fSL --retry 3 "$SFACE_URL" -o "$SFACE_FILE" || echo "⚠️ Không thể tải SFace (kiểm tra mạng Internet)."
+fi
+if [ -f "$YUNET_FILE" ] && [ -f "$SFACE_FILE" ]; then
+    echo "✅ Đã sẵn sàng 2 model Face ID (YuNet + SFace) tại: $FACE_MODELS_DIR"
+fi
+
+# 5c. Tự sinh & đồng bộ SECRET_KEY, FACE_DEVICE_KEY, FACE_YUNET, FACE_SFACE giữa server/.env và edge/.env
+python - "$SERVER_DIR/.env" "$EDGE_DIR/.env" "$YUNET_FILE" "$SFACE_FILE" << 'PY'
+import secrets
+import sys
+from pathlib import Path
+
+server_env = Path(sys.argv[1])
+edge_env = Path(sys.argv[2])
+yunet_path = sys.argv[3]
+sface_path = sys.argv[4]
+
+def read_kv(path: Path):
+    data = {}
+    if not path.exists():
+        return data
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        data[k.strip()] = v.strip()
+    return data
+
+def upsert_kv(path: Path, updates: dict):
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    seen = set()
+    out = []
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip()
+            if k in updates:
+                out.append(f"{k}={updates[k]}")
+                seen.add(k)
+                continue
+        out.append(line)
+    for k, v in updates.items():
+        if k not in seen:
+            out.append(f"{k}={v}")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+s_kv = read_kv(server_env)
+e_kv = read_kv(edge_env)
+
+# 1. SECRET_KEY
+secret_key = s_kv.get("SECRET_KEY", "")
+if not secret_key or "change-in-production" in secret_key:
+    secret_key = secrets.token_hex(32)
+
+# 2. FACE_DEVICE_KEY shared between server & edge
+def valid_key(val: str) -> bool:
+    return bool(val) and "change-me" not in val
+
+face_key = s_kv.get("FACE_DEVICE_KEY", "")
+if not valid_key(face_key):
+    face_key = e_kv.get("FACE_DEVICE_KEY", "")
+if not valid_key(face_key):
+    face_key = secrets.token_hex(32)
+
+upsert_kv(server_env, {
+    "SECRET_KEY": secret_key,
+    "FACE_DEVICE_KEY": face_key,
+    "FACE_YUNET": yunet_path,
+    "FACE_SFACE": sface_path,
+})
+upsert_kv(edge_env, {
+    "FACE_DEVICE_KEY": face_key,
+    "FACE_YUNET": yunet_path,
+    "FACE_SFACE": sface_path,
+})
+print("✅ Đã tự động sinh & đồng bộ SECRET_KEY, FACE_DEVICE_KEY, FACE_YUNET, FACE_SFACE.")
+PY
 
 MODELS_DIR="$EDGE_DIR/models/paddlex"
 SAMPLE_PARAM="$MODELS_DIR/official_models/PP-OCRv5_mobile_det/inference.pdiparams"

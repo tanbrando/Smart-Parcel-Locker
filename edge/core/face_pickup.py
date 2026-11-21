@@ -11,9 +11,30 @@ from edge.config import CAMERA_INDEX, USE_CSI_CAMERA
 from edge.cv.face_verify import FaceCamera, PiCapture, POSE_PROMPTS, cv2
 
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_YUNET_PATH = REPO_ROOT / "edge" / "models" / "face" / "face_detection_yunet_2023mar.onnx"
+DEFAULT_SFACE_PATH = REPO_ROOT / "edge" / "models" / "face" / "face_recognition_sface_2021dec.onnx"
+
+
+def _resolve_model_path(env_var: str, default_path: Path) -> Path:
+    raw = os.environ.get(env_var, "").strip()
+    if raw:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = REPO_ROOT / candidate
+        return candidate
+    return default_path
+
+
 def verify_pickup(api, user_id, indicators):
-    device_key = os.environ["FACE_DEVICE_KEY"]
-    model = FaceCamera(Path(os.environ["FACE_YUNET"]), Path(os.environ["FACE_SFACE"]))
+    device_key = os.environ.get("FACE_DEVICE_KEY", "").strip()
+    if not device_key:
+        raise RuntimeError("FACE_DEVICE_KEY is not configured. Run ./setup.sh to generate keys.")
+    yunet_path = _resolve_model_path("FACE_YUNET", DEFAULT_YUNET_PATH)
+    sface_path = _resolve_model_path("FACE_SFACE", DEFAULT_SFACE_PATH)
+    if not yunet_path.is_file() or not sface_path.is_file():
+        raise RuntimeError("Face ONNX models missing. Run ./setup.sh to download YuNet & SFace.")
+    model = FaceCamera(yunet_path, sface_path)
     photos = {}
     neutral_pitch = None
     with ExitStack() as stack:

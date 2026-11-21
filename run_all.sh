@@ -89,13 +89,23 @@ fi
 source "$TARGET_VENV/bin/activate"
 export PYTHONPATH="$PROJECT_ROOT"
 
-# Nạp cấu hình Edge từ edge/.env nếu có
+# Nạp cấu hình Server từ server/.env và Edge từ edge/.env (đồng bộ FACE_DEVICE_KEY, FACE_YUNET, FACE_SFACE)
+if [ -f "$PROJECT_ROOT/server/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$PROJECT_ROOT/server/.env"
+    set +a
+fi
 if [ -f "$PROJECT_ROOT/edge/.env" ]; then
     set -a
     # shellcheck disable=SC1091
     source "$PROJECT_ROOT/edge/.env"
     set +a
 fi
+
+# Mặc định trỏ tới thư mục model Face ID cục bộ nếu chưa cấu hình
+export FACE_YUNET="${FACE_YUNET:-$PROJECT_ROOT/edge/models/face/face_detection_yunet_2023mar.onnx}"
+export FACE_SFACE="${FACE_SFACE:-$PROJECT_ROOT/edge/models/face/face_recognition_sface_2021dec.onnx}"
 
 # Nếu người dùng bật --mock thì ép chế độ giả lập đè lên .env
 if [ "$USE_MOCK" = true ]; then
@@ -189,6 +199,13 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "server" ]; then
     else
         echo "✅ Đã phát hiện cấu hình TELEGRAM_BOT_TOKEN."
     fi
+fi
+
+# Kiểm tra trạng thái Model & Key cho Face ID
+if [ -f "$FACE_YUNET" ] && [ -f "$FACE_SFACE" ] && [ -n "${FACE_DEVICE_KEY:-}" ]; then
+    echo "✅ Face ID sẵn sàng (YuNet + SFace ONNX + FACE_DEVICE_KEY)."
+else
+    echo "⚠️ Thiếu model Face ID hoặc FACE_DEVICE_KEY — hãy chạy ./setup.sh để tự động tải model & sinh key."
 fi
 
 # Sinh chứng chỉ tự ký (SAN gồm IP LAN + localhost) cho chế độ --https.
