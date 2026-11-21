@@ -13,7 +13,11 @@ from contracts.schemas import (
     OrderStatus,
     LockerInfo,
     LockerStatus,
+    OccupancyResult,
+    LockState,
+    LockDecision,
 )
+
 
 # Mock Waybill Scans
 MOCK_SCAN_VALID_SPX = ScanResult(
