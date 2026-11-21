@@ -13,7 +13,11 @@ from contracts.schemas import (
     OrderStatus,
     LockerInfo,
     LockerStatus,
+    OccupancyResult,
+    LockState,
+    LockDecision,
 )
+
 
 # Mock Waybill Scans
 MOCK_SCAN_VALID_SPX = ScanResult(
@@ -69,6 +73,26 @@ MOCK_VERIFY_RESPONSE_SUCCESS = PackageVerificationResponse(
     tolerance_grams=100.0,
     message="Package authorized for Locker 1",
 )
+
+# Mock Ultrasonic Occupancy Results
+MOCK_OCCUPANCY_OCCUPIED = OccupancyResult(
+    occupied=True,
+    distance_cm=18.5,
+    baseline_cm=35.0,
+    confidence=0.98,
+    error=None,
+    timestamp=datetime.now(timezone.utc),
+)
+
+MOCK_OCCUPANCY_EMPTY = OccupancyResult(
+    occupied=False,
+    distance_cm=35.0,
+    baseline_cm=35.0,
+    confidence=1.0,
+    error=None,
+    timestamp=datetime.now(timezone.utc),
+)
+
 
 MOCK_VERIFY_RESPONSE_NOT_FOUND = PackageVerificationResponse(
     verified=False,

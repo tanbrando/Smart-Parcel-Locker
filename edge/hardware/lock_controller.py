@@ -1,83 +1,35 @@
 """
-Solenoid Lock & Door Controller Module [Person 2].
-Manages relay-driven electric strike / solenoid locks for locker doors.
+Lock Controller Module [Person 2].
+Maintains backward compatibility by wrapping the modern ServoLockController.
 """
-import time
-import logging
-from typing import Dict
-
-from edge.config import (
-    LOCKER_RELAY_PINS,
-    RELAY_ACTIVE_LOW,
-    DOOR_UNLOCK_DURATION_SEC,
-    MOCK_HARDWARE,
+from edge.hardware.servo_lock import (
+    ServoLockController,
+    get_servo_lock,
+    unlock_door,
+    lock_door,
+    is_door_closed,
+    get_lock_state,
+    lock_if_occupied,
+    open_locker_door,
 )
 
-logger = logging.getLogger("edge.hardware.lock")
+# Alias LockController to ServoLockController
+LockController = ServoLockController
+get_lock_controller = get_servo_lock
 
-try:
-    import RPi.GPIO as GPIO
-    RPI_AVAILABLE = True
-except (ImportError, RuntimeError):
-    RPI_AVAILABLE = False
+__all__ = [
+    "LockController",
+    "ServoLockController",
+    "get_lock_controller",
+    "get_servo_lock",
+    "unlock_door",
+    "lock_door",
+    "is_door_closed",
+    "get_lock_state",
+    "lock_if_occupied",
+    "open_locker_door",
+]
 
 
-class LockController:
-    """Controls door release solenoids and monitors magnetic door contacts."""
 
-    def __init__(self, mock_mode: bool = MOCK_HARDWARE):
-        self.mock_mode = mock_mode or not RPI_AVAILABLE
-        self.relay_pins: Dict[int, int] = LOCKER_RELAY_PINS
-        self.door_status: Dict[int, bool] = {k: True for k in self.relay_pins}  # True = closed
-
-        if self.mock_mode:
-            logger.info("LockController initialized in MOCK mode.")
-        else:
-            self._setup_hardware()
-
-    def _setup_hardware(self):
-        GPIO.setmode(GPIO.BCM)
-        for locker_id, pin in self.relay_pins.items():
-            GPIO.setup(pin, GPIO.OUT)
-            # Default state: Locked
-            initial_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
-            GPIO.output(pin, initial_state)
-            logger.info("Locker %d relay set on GPIO %d", locker_id, pin)
-
-    def open_locker_door(self, locker_id: int, duration_sec: float = DOOR_UNLOCK_DURATION_SEC) -> bool:
-        """
-        Triggers the solenoid relay for `duration_sec` seconds to pop open the locker door.
-        """
-        if locker_id not in self.relay_pins:
-            logger.error("Invalid locker_id: %d. Available: %s", locker_id, list(self.relay_pins.keys()))
-            return False
-
-        pin = self.relay_pins[locker_id]
-        logger.info("🚪 Opening locker %d (Relay GPIO %d for %.1fs)...", locker_id, pin, duration_sec)
-
-        if self.mock_mode:
-            self.door_status[locker_id] = False  # Door opened
-            time.sleep(0.5)
-            logger.info("[Mock Lock] Locker %d door popped open successfully.", locker_id)
-            time.sleep(1.0)
-            self.door_status[locker_id] = True   # Courier/User closes door
-            return True
-
-        unlock_state = GPIO.LOW if RELAY_ACTIVE_LOW else GPIO.HIGH
-        lock_state = GPIO.HIGH if RELAY_ACTIVE_LOW else GPIO.LOW
-
-        try:
-            GPIO.output(pin, unlock_state)
-            self.door_status[locker_id] = False
-            time.sleep(duration_sec)
-        finally:
-            GPIO.output(pin, lock_state)
-            self.door_status[locker_id] = True
-
-        logger.info("Locker %d locked again.", locker_id)
-        return True
-
-    def is_door_closed(self, locker_id: int) -> bool:
-        """Checks reed switch / magnetic contact sensor state."""
-        return self.door_status.get(locker_id, True)
 
