@@ -11,7 +11,6 @@ window.PortalUploadTab = (() => {
     const fileInput = document.getElementById("orderImageInput");
     const previewImg = document.getElementById("orderPreviewImg");
     const fileNameEl = document.getElementById("orderSelectedFileName");
-    const weightInput = document.getElementById("orderExpectedWeight");
     const submitBtn = document.getElementById("orderUploadSubmitBtn");
     const resultBox = document.getElementById("orderUploadResult");
 
@@ -45,9 +44,6 @@ window.PortalUploadTab = (() => {
       const formData = new FormData();
       formData.append("image", selectedFile);
       formData.append("user_id", String(user.id));
-      if (weightInput && weightInput.value.trim()) {
-        formData.append("expected_weight", weightInput.value.trim());
-      }
 
       submitBtn.disabled = true;
       submitBtn.innerHTML = `${icon("rotate-right")} Đang gửi...`;

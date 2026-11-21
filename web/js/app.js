@@ -8,10 +8,23 @@ function escapeAttr(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-function weightCheck(o) {
-  if (o.actual_weight === null || o.actual_weight === undefined) return null;
-  const dev = Math.abs(o.expected_weight - o.actual_weight);
-  return { dev, ok: dev <= 150 };
+function lockerFillMetrics(l) {
+  const emptyDist = l.empty_distance_cm && l.empty_distance_cm > 0 ? l.empty_distance_cm : 35.0;
+  const curDist = l.current_distance_cm !== null && l.current_distance_cm !== undefined ? l.current_distance_cm : emptyDist;
+  if (l.status === "EMPTY") {
+    return { pct: 0, curDist: emptyDist, emptyDist };
+  }
+  const pct = l.fill_percent !== undefined && l.fill_percent !== null
+    ? l.fill_percent
+    : Math.max(5, Math.min(100, Math.round(((emptyDist - curDist) / emptyDist) * 100)));
+  return { pct, curDist, emptyDist };
+}
+
+function distanceBadgeText(o) {
+  if (o.measured_distance_cm !== null && o.measured_distance_cm !== undefined) {
+    return `${o.measured_distance_cm} cm`;
+  }
+  return o.status === "STORED" ? "Đã đặt tủ" : "-";
 }
 
 let globalLockers = [];
@@ -124,14 +137,14 @@ function renderDashboardLockers() {
   if (!container) return;
 
   container.innerHTML = globalLockers.map(l => {
-    const pct = l.max_weight > 0 ? Math.min(100, Math.round((l.current_weight / l.max_weight) * 100)) : 0;
+    const { pct, curDist, emptyDist } = lockerFillMetrics(l);
     return `
       <div class="bento-list-item">
         <div class="item-left">
           <div class="item-avatar">#${l.locker_number}</div>
           <div class="item-text">
             <b>Ngăn ${l.locker_number}</b>
-            <span>${l.current_weight}g / ${l.max_weight}g (${pct}%)</span>
+            <span>HC-SR04: ${curDist} / ${emptyDist} cm (${pct}%)</span>
           </div>
         </div>
         <span class="pill-badge ${l.status}">${l.status}</span>
@@ -150,7 +163,9 @@ function renderDashboardRecentOrders() {
   }
 
   container.innerHTML = globalOrders.slice(0, 4).map(o => {
-    const chk = weightCheck(o);
+    const dist = o.measured_distance_cm !== null && o.measured_distance_cm !== undefined
+      ? ` • <span class="text-ok" style="display:inline;">${o.measured_distance_cm} cm</span>`
+      : "";
     const name = o.recipient_name || (o.user ? o.user.full_name : "Khách");
     return `
       <div class="bento-list-item">
@@ -158,7 +173,7 @@ function renderDashboardRecentOrders() {
           <div class="item-avatar">${ic("box-open")}</div>
           <div class="item-text">
             <b title="${escapeAttr(o.tracking_number)}">${o.tracking_number}</b>
-            <span>${name}${chk ? ` • <span class="${chk.ok ? "text-ok" : "text-bad"}" style="display:inline;">±${chk.dev}g</span>` : ""}</span>
+            <span>${name}${dist}</span>
           </div>
         </div>
         <span class="pill-badge ${o.status}">${o.status}</span>
@@ -209,7 +224,7 @@ function renderLockersGridFull() {
   if (!container) return;
 
   container.innerHTML = globalLockers.map(l => {
-    const pct = l.max_weight > 0 ? Math.min(100, Math.round((l.current_weight / l.max_weight) * 100)) : 0;
+    const { pct, curDist, emptyDist } = lockerFillMetrics(l);
     const isMaint = l.status === "MAINTENANCE";
     const updated = l.updated_at ? new Date(l.updated_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "-";
 
@@ -222,8 +237,8 @@ function renderLockersGridFull() {
 
         <div>
           <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:600; margin-bottom:6px;">
-            <span title="Tải trọng">${ic("weight-hanging")} ${l.current_weight}g / ${l.max_weight}g</span>
-            <span>${pct}%</span>
+            <span title="Khoảng cách HC-SR04 (trống: ${emptyDist} cm)">${ic("ruler")} ${curDist} cm / ${emptyDist} cm</span>
+            <span>${pct}% đầy</span>
           </div>
           <div class="stage-track" style="height:10px; margin-bottom:0;">
             <div class="stage-fill" style="width:${pct}%;"></div>
@@ -289,10 +304,9 @@ function renderOrdersTable() {
   }
 
   tbody.innerHTML = filtered.map(o => {
-    const chk = weightCheck(o);
-    const weight = chk
-      ? `${o.expected_weight} → ${o.actual_weight}g <span class="${chk.ok ? "text-ok" : "text-bad"}" title="Lệch ${chk.dev}g">${ic(chk.ok ? "circle-check" : "triangle-exclamation")}</span>`
-      : `${o.expected_weight}g`;
+    const distDisplay = o.measured_distance_cm !== null && o.measured_distance_cm !== undefined
+      ? `<span class="text-ok">${ic("circle-check")} ${o.measured_distance_cm} cm</span>`
+      : `<span class="text-muted">${o.status === "STORED" ? "Đã xác nhận" : "-"}</span>`;
 
     return `
       <tr>
@@ -303,7 +317,7 @@ function renderOrdersTable() {
         <td><b>${o.recipient_name || (o.user ? o.user.full_name : "Khách")}</b></td>
         <td><span class="pill-badge ${o.status}">${o.status}</span></td>
         <td>${o.locker_id ? `#${o.locker_id}` : "-"}</td>
-        <td style="white-space:nowrap;">${weight}</td>
+        <td style="white-space:nowrap;">${distDisplay}</td>
         <td>${o.otp_code ? `<b><code>${o.otp_code}</code></b>` : "-"}</td>
       </tr>
     `;
@@ -522,23 +536,23 @@ async function sendTgSimPhoto() {
 // Edge Simulator
 async function simEdgeVerify() {
   const tracking = document.getElementById("simTracking").value.trim();
-  const ocrWeight = parseInt(document.getElementById("simOcrWeight").value, 10) || 520;
   const box = document.getElementById("simEdgeConsole");
 
   box.style.display = "block";
-  box.textContent += `\n> [Pi Camera] POST /pi/verify-package { tracking: "${tracking}", ocr_weight: ${ocrWeight} }\n`;
+  box.textContent += `\n> [Pi Camera] POST /pi/verify-package { tracking: "${tracking}" }\n`;
 
   try {
     const res = await fetch(`${API_BASE}/pi/verify-package`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tracking_number: tracking, ocr_weight: ocrWeight, recipient_phone_last4: "3456" }),
+      body: JSON.stringify({ tracking_number: tracking, ocr_weight: 0, recipient_phone_last4: "3456" }),
     });
     const data = await res.json();
     box.textContent += `< Status ${res.status}: ${JSON.stringify(data, null, 2)}\n`;
 
     if (res.ok && data.action === "UNLOCK_DOOR") {
       document.getElementById("simLockerNum").value = data.locker_number;
+      if (data.order_id) document.getElementById("simOrderId").value = data.order_id;
     }
     await fetchAllData();
   } catch (e) {
@@ -549,17 +563,17 @@ async function simEdgeVerify() {
 async function simEdgeDeposit() {
   const orderId = parseInt(document.getElementById("simOrderId").value, 10);
   const lockerNum = parseInt(document.getElementById("simLockerNum").value, 10);
-  const deltaWeight = parseInt(document.getElementById("simDeltaWeight").value, 10);
+  const distanceCm = parseFloat(document.getElementById("simDistanceCm").value);
   const box = document.getElementById("simEdgeConsole");
 
   box.style.display = "block";
-  box.textContent += `\n> [HX711 LoadCell] POST /pi/confirm-deposit { order: ${orderId}, locker: ${lockerNum}, weight: ${deltaWeight}g }\n`;
+  box.textContent += `\n> [HC-SR04 Ultrasonic] POST /pi/confirm-deposit { order: ${orderId}, locker: ${lockerNum}, distance_cm: ${distanceCm}cm }\n`;
 
   try {
     const res = await fetch(`${API_BASE}/pi/confirm-deposit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order_id: orderId, locker_number: lockerNum, delta_weight: deltaWeight }),
+      body: JSON.stringify({ order_id: orderId, locker_number: lockerNum, distance_cm: distanceCm }),
     });
     const data = await res.json();
     box.textContent += `< Status ${res.status}: ${JSON.stringify(data, null, 2)}\n`;

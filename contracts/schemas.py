@@ -243,10 +243,12 @@ class PackageVerificationResponse(BaseModel):
 
 
 class DepositConfirmationRequest(BaseModel):
-    """Request sent by edge after parcel is placed and weighed."""
+    """Request sent by edge after parcel is placed, measured by HC-SR04, and door is closed."""
     order_id: int
     locker_number: int
-    delta_weight: int
+    delta_weight: Optional[int] = 0
+    distance_cm: Optional[float] = Field(None, description="HC-SR04 ultrasonic distance measured in cm")
+    empty_distance_cm: Optional[float] = Field(None, description="Baseline empty locker distance in cm")
     image_base64: Optional[str] = None
 
 
@@ -255,8 +257,10 @@ class DepositConfirmationResponse(BaseModel):
     success: bool
     status: OrderStatus
     otp_generated: str
-    weight_matched: bool
-    deviation_gram: int
+    weight_matched: bool = True
+    deviation_gram: int = 0
+    distance_cm: Optional[float] = None
+    parcel_detected: bool = True
 
 
 class OtpVerificationRequest(BaseModel):
@@ -380,6 +384,7 @@ class OrderResponse(BaseModel):
     order_code: Optional[str] = None
     expected_weight: int = 0
     actual_weight: Optional[int] = None
+    measured_distance_cm: Optional[float] = None
     otp_code: Optional[str] = None
     otp_expires_at: Optional[datetime] = None
     status: OrderStatus
@@ -400,10 +405,24 @@ class LockerInfo(BaseModel):
     locker_number: int
     current_weight: int = 0
     max_weight: int = 5000
+    current_distance_cm: Optional[float] = 35.0
+    empty_distance_cm: float = 35.0
+    fill_percent: int = 0
     status: LockerStatus
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def compute_fill_percent(self):
+        empty_d = self.empty_distance_cm if self.empty_distance_cm and self.empty_distance_cm > 0 else 35.0
+        cur_d = self.current_distance_cm if self.current_distance_cm is not None else empty_d
+        if self.status == LockerStatus.EMPTY:
+            self.fill_percent = 0
+        else:
+            ratio = (empty_d - cur_d) / empty_d
+            self.fill_percent = max(5, min(100, int(round(ratio * 100))))
+        return self
 
 
 class AccessLogResponse(BaseModel):

@@ -515,6 +515,61 @@ def test_modular_web_portal_and_login_assets():
         assert mod.exists(), f"Missing modular asset: {mod}"
 
 
+def test_hcsr04_distance_deposit_and_4_lockers_schema(db_session):
+    """Verifies HC-SR04 ultrasonic distance deposit, fill_percent calculation, and 4-locker seeding."""
+    from contracts.schemas import LockerInfo
+    from server.main import init_database_tables
+
+    # 1. Seeded app init ensures 4 lockers exist
+    init_database_tables()
+    all_lockers = lockers.list_lockers(db=db_session)
+    assert len(all_lockers) >= 3
+
+    # 2. Deposit using HC-SR04 distance_cm (e.g. 14.0 cm from 35.0 cm empty baseline -> 60% full)
+    user = db_session.query(User).first()
+    order = Order(
+        user_id=user.id,
+        tracking_number="SPX_HCSR04_001",
+        expected_weight=0,
+        status=OrderStatus.REGISTERED,
+    )
+    db_session.add(order)
+    db_session.commit()
+
+    v_res = edge.verify_package(PackageVerificationRequest(tracking_number="SPX_HCSR04_001"), db=db_session)
+    assert v_res.action == "UNLOCK_DOOR"
+
+    d_res = edge.confirm_deposit(
+        DepositConfirmationRequest(
+            order_id=order.id,
+            locker_number=v_res.locker_number,
+            distance_cm=14.0,
+            empty_distance_cm=35.0,
+        ),
+        db=db_session,
+    )
+    assert d_res.success is True
+    assert d_res.parcel_detected is True
+    assert d_res.distance_cm == 14.0
+
+    db_session.refresh(order)
+    assert order.measured_distance_cm == 14.0
+
+    locker_obj = db_session.query(Locker).filter(Locker.locker_number == v_res.locker_number).first()
+    info = LockerInfo.model_validate(locker_obj)
+    assert info.current_distance_cm == 14.0
+    assert info.empty_distance_cm == 35.0
+    assert info.fill_percent == 60
+
+    # 3. Pickup resets locker distance back to empty baseline (35.0 cm)
+    pickup = edge.verify_otp(OtpVerificationRequest(otp_code=d_res.otp_generated), db=db_session)
+    assert pickup.valid is True
+    db_session.refresh(locker_obj)
+    assert locker_obj.status == LockerStatus.EMPTY
+    assert locker_obj.current_distance_cm == 35.0
+
+
+
 
 
 

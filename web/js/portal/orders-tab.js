@@ -117,7 +117,7 @@ window.PortalOrdersTab = (() => {
 
             <div class="order-meta">
               <span title="Ngăn tủ">${icon("vault")} <b>${o.locker_id ? `#${o.locker_id}` : "-"}</b></span>
-              <span title="Khối lượng dự kiến → thực tế">${icon("weight-hanging")} <b>${o.expected_weight || 0}g${o.actual_weight != null ? ` → ${o.actual_weight}g` : ""}</b></span>
+              ${o.measured_distance_cm != null ? `<span title="Khoảng cách cảm biến HC-SR04">${icon("ruler")} <b>${o.measured_distance_cm} cm</b></span>` : ""}
             </div>
 
             ${sharedBanner}

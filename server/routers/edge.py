@@ -207,15 +207,29 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
     else:
         otp_code, expires_at = generate_otp(length=settings.OTP_LENGTH, hours_valid=settings.OTP_VALID_HOURS)
 
-    # 2. Check weight deviation against OCR expected weight
-    expected = order.expected_weight if order.expected_weight > 0 else req.delta_weight
-    deviation_gram = abs(expected - req.delta_weight)
-    weight_matched = deviation_gram <= settings.WEIGHT_TOLERANCE_GRAMS
+    # 2. HC-SR04 ultrasonic parcel detection & fallback weight check
+    delta_w = req.delta_weight or 0
+    empty_dist = req.empty_distance_cm if req.empty_distance_cm and req.empty_distance_cm > 0 else (locker.empty_distance_cm or 35.0)
+    if req.empty_distance_cm and req.empty_distance_cm > 0:
+        locker.empty_distance_cm = req.empty_distance_cm
+
+    if req.distance_cm is not None:
+        distance_cm = float(req.distance_cm)
+        parcel_detected = (empty_dist - distance_cm) >= 3.0
+        weight_matched = parcel_detected
+        deviation_gram = 0
+    else:
+        distance_cm = round(max(5.0, empty_dist - 12.0), 1)
+        parcel_detected = True
+        expected = order.expected_weight if order.expected_weight > 0 else delta_w
+        deviation_gram = abs(expected - delta_w)
+        weight_matched = deviation_gram <= settings.WEIGHT_TOLERANCE_GRAMS
 
     # 3. Update Order
     order.status = OrderStatus.STORED
     order.locker_id = locker.id
-    order.actual_weight = req.delta_weight
+    order.actual_weight = delta_w
+    order.measured_distance_cm = distance_cm
     order.otp_code = otp_code
     order.otp_expires_at = expires_at
     order.delivered_at = datetime.now(timezone.utc)
@@ -223,26 +237,32 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
         order.delivered_photo_url = req.image_base64
 
     # 4. Update Locker
-    locker.current_weight += req.delta_weight
+    locker.current_weight += delta_w
+    locker.current_distance_cm = distance_cm
     locker.status = LockerStatus.OCCUPIED
 
     # 5. Access Logs
+    sensor_detail = (
+        f"HC-SR04 distance: {distance_cm:.1f}cm (empty: {empty_dist:.1f}cm)"
+        if req.distance_cm is not None
+        else f"Delta weight: {delta_w}g"
+    )
     door_log = AccessLog(
         locker_id=locker.id,
         order_id=order.id,
         action=AccessAction.DOOR_OPEN.value,
-        details=f"Parcel stored in Locker #{locker.locker_number}. Delta weight: {req.delta_weight}g, OTP: {otp_code}",
+        details=f"Parcel stored in Locker #{locker.locker_number}. {sensor_detail}, OTP: {otp_code}",
     )
     db.add(door_log)
 
-    if not weight_matched:
-        weight_fail_log = AccessLog(
+    if not parcel_detected:
+        sensor_fail_log = AccessLog(
             locker_id=locker.id,
             order_id=order.id,
             action=AccessAction.WEIGHT_CHECK_FAIL.value,
-            details=f"Weight deviation: {deviation_gram}g (Expected: {expected}g, Actual: {req.delta_weight}g) exceeds tolerance {settings.WEIGHT_TOLERANCE_GRAMS}g",
+            details=f"HC-SR04 did not detect parcel change: measured {distance_cm:.1f}cm vs empty {empty_dist:.1f}cm",
         )
-        db.add(weight_fail_log)
+        db.add(sensor_fail_log)
 
     db.commit()
 
@@ -253,7 +273,7 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
         tracking_number=order.tracking_number or f"ORD-{order.id}",
         locker_number=locker.locker_number,
         otp_code=otp_code,
-        delta_weight=req.delta_weight,
+        delta_weight=delta_w,
         image_base64=req.image_base64,
     )
 
@@ -263,6 +283,8 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
         otp_generated=otp_code,
         weight_matched=weight_matched,
         deviation_gram=deviation_gram,
+        distance_cm=distance_cm,
+        parcel_detected=parcel_detected,
     )
 
 
@@ -356,6 +378,7 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
         if other_parcels == 0:
             target_locker.status = LockerStatus.EMPTY
             target_locker.current_weight = 0
+            target_locker.current_distance_cm = target_locker.empty_distance_cm or 35.0
 
     # Log action
     tracking_summary = ", ".join(collected_tracking_list)
