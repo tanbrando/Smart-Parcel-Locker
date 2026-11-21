@@ -13,6 +13,7 @@ from edge.config import (
     KEYPAD_LOCKOUT_SECONDS,
     MOCK_HARDWARE,
 )
+from contracts.schemas import KeypadEvent
 
 logger = logging.getLogger("edge.core.keypad")
 
@@ -23,10 +24,12 @@ except (ImportError, RuntimeError):
     RPI_AVAILABLE = False
 
 
+# Bố cục tùy chỉnh (1-9 nằm ở 9 ô đầu S1-S9, bỏ qua phím S10 bị hỏng):
+# S1=1, S2=2, S3=3, S4=4 | S5=5, S6=6, S7=7, S8=8 | S9=9, S10=(hỏng), S11=0, S12=C | S13=*, S14=0, S15=#, S16=D
 KEYPAD_MATRIX = [
-    ["1", "2", "3", "A"],
-    ["4", "5", "6", "B"],
-    ["7", "8", "9", "C"],
+    ["1", "2", "3", "4"],
+    ["5", "6", "7", "8"],
+    ["9", "",  "0", "C"],
     ["*", "0", "#", "D"],
 ]
 
@@ -86,7 +89,7 @@ class KeypadReader:
                     # Debounce
                     time.sleep(0.15)
                     GPIO.output(r_pin, GPIO.LOW)
-                    return KEYPAD_MATRIX[r_idx][c_idx]
+                    return KEYPAD_MATRIX[r_idx][c_idx] or None
             GPIO.output(r_pin, GPIO.LOW)
 
         return None
@@ -121,12 +124,15 @@ class KeypadReader:
             key = self.scan_single_key()
             if key:
                 if key == "#":  # Submit key
+                    logger.info("[Keypad] Nhấn '#' xác nhận OTP.")
                     break
                 elif key == "*":  # Backspace key
                     if buffer:
                         buffer.pop()
+                        logger.info("[Keypad] Xóa 1 số (còn %d/%d số)", len(buffer), max_digits)
                 elif key.isdigit():
                     buffer.append(key)
+                    logger.info("[Keypad] Nhận phím '%s' (%d/%d)", key, len(buffer), max_digits)
                     if len(buffer) >= max_digits:
                         break
 
@@ -137,3 +143,27 @@ class KeypadReader:
 
         return "".join(buffer)
 
+    def listen_keypad_otp(
+        self,
+        timeout: float = 30.0,
+        mock_input: Optional[str] = None,
+    ) -> KeypadEvent:
+        """Read one OTP attempt and return the complete keypad contract."""
+        if self.is_locked_out():
+            return KeypadEvent(
+                attempts_count=self.failed_attempts,
+                is_rate_limited=True,
+                remaining_lock_time=self.get_remaining_lockout_seconds(),
+            )
+
+        entered_pin = self.get_pin_input(
+            timeout=timeout,
+            max_digits=6,
+            mock_input=mock_input,
+        ) or ""
+        return KeypadEvent(
+            entered_pin=entered_pin,
+            attempts_count=self.failed_attempts,
+            is_rate_limited=self.is_locked_out(),
+            remaining_lock_time=self.get_remaining_lockout_seconds(),
+        )

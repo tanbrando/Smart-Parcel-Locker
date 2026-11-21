@@ -3,6 +3,9 @@ Contract & Edge Integration Tests.
 Verifies that Edge functions and classes produce outputs compliant with shared contracts.
 """
 from contracts.schemas import (
+    DepositAction,
+    DepositStatus,
+    LockerAuth,
     ScanResult,
     WeightMeasurement,
     SystemState,
@@ -13,7 +16,7 @@ from edge.hardware.hx711_loadcell import LoadCellController, measure_weight_delt
 from edge.hardware.lock_controller import LockController, open_locker_door
 from edge.hardware.indicators import IndicatorController
 from edge.core.keypad import KeypadReader
-from edge.core.fsm import LockerStateMachine
+from edge.core.fsm import LockerStateMachine, verify_deposit_integrity
 
 
 def test_tracking_regex_parsers():
@@ -145,6 +148,203 @@ def test_fsm_initial_state():
     assert fsm.state == SystemState.IDLE
     fsm.reset_to_idle()
     assert fsm.state == SystemState.IDLE
+
+
+def test_embedded_contracts_are_synchronized():
+    scan = ScanResult(tracking_number="SPX123", weight_declared=500)
+    assert scan.success is True
+    assert scan.ocr_weight == 500
+
+    measurement = WeightMeasurement(
+        locker_id=1,
+        current_weight_grams=510,
+        delta_grams=510,
+        is_stable=True,
+    )
+    assert measurement.after_weight == 510
+    assert measurement.delta_weight == 510
+
+
+def test_deposit_integrity_rejects_empty_and_accepts_valid_package():
+    auth = LockerAuth(
+        is_allowed=True,
+        locker_id=1,
+        expected_weight=500,
+        weight_tolerance=20,
+    )
+    empty = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=5, is_stable=True),
+    )
+    assert empty.status == DepositStatus.EMPTY_DEPOSIT
+    assert empty.action == DepositAction.TRIGGER_BUZZER_ALARM
+
+    valid = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=510, is_stable=True),
+    )
+    assert valid.status == DepositStatus.SUCCESS
+    assert valid.action == DepositAction.CONFIRM_SERVER_AND_LOCK
+
+
+def test_keypad_event_contract_and_otp_validation():
+    keypad = KeypadReader(mock_mode=True)
+    event = keypad.listen_keypad_otp(mock_input="123456")
+    assert event.entered_pin == "123456"
+    assert event.is_rate_limited is False
+
+
+def test_contracts_bidirectional_sync():
+    from contracts.schemas import PackageVerificationResponse, OtpVerificationResponse
+
+    # 1. Server-style -> Edge-style
+    p1 = PackageVerificationResponse(action="UNLOCK_DOOR", locker_number=2, max_allowed_weight=600)
+    assert p1.verified is True
+    assert p1.locker_id == 2
+    assert p1.declared_weight_grams == 600
+
+    # 2. Edge-style -> Server-style
+    p2 = PackageVerificationResponse(verified=True, locker_id=3, declared_weight_grams=800)
+    assert p2.action == "UNLOCK_DOOR"
+    assert p2.locker_number == 3
+    assert p2.max_allowed_weight == 800
+
+    # 3. OTP verification response sync
+    o1 = OtpVerificationResponse(valid=True, locker_number=2)
+    assert o1.success is True
+    assert o1.locker_id == 2
+
+    o2 = OtpVerificationResponse(success=True, locker_id=1)
+    assert o2.valid is True
+    assert o2.locker_number == 1
+
+
+def test_lock_controller_wait_for_door_closed():
+    lock = LockController(mock_mode=True)
+    assert lock.wait_for_door_closed(locker_id=1, timeout_seconds=0.05) is True
+
+
+def test_edge_api_client_and_fsm_full_workflow():
+    from unittest.mock import MagicMock
+    from edge.core.api_client import EdgeApiClient
+    from contracts.schemas import (
+        DepositConfirmationResponse,
+        OtpVerificationResponse,
+        OrderStatus,
+    )
+
+    fsm = LockerStateMachine()
+
+    # Mock API Client responses
+    mock_api = MagicMock(spec=EdgeApiClient)
+    mock_api.request_door_unlock.return_value = LockerAuth(
+        is_allowed=True,
+        locker_id=1,
+        order_id=42,
+        expected_weight=500.0,
+        weight_tolerance=100.0,
+    )
+    mock_api.confirm_deposit.return_value = DepositConfirmationResponse(
+        success=True,
+        status=OrderStatus.STORED,
+        otp_generated="654321",
+        weight_matched=True,
+        deviation_gram=10,
+    )
+    mock_api.handle_otp_submission.return_value = OtpVerificationResponse(
+        valid=True,
+        locker_number=1,
+        order_id=42,
+        message="Authorized",
+    )
+
+    fsm.api_client = mock_api
+
+    from unittest.mock import patch
+    with patch("time.sleep", return_value=None):
+        # 1. Test Courier Deposit Workflow
+        deposit_success = fsm.handle_courier_deposit()
+        assert deposit_success is True
+        assert fsm.state == SystemState.IDLE
+        mock_api.request_door_unlock.assert_called_once()
+        mock_api.confirm_deposit.assert_called_once()
+
+        # 2. Test Recipient Pickup Workflow
+        pickup_success = fsm.handle_recipient_pickup(otp_input="654321")
+        assert pickup_success is True
+        assert fsm.state == SystemState.IDLE
+        mock_api.handle_otp_submission.assert_called_once_with("654321")
+
+
+def test_ocr_isolated_resilience_and_off_mode():
+    import numpy as np
+    from unittest.mock import patch, MagicMock
+    from edge.cv import ocr_utils
+
+    dummy_img = np.zeros((32, 32, 3), dtype=np.uint8)
+
+    with patch.dict("os.environ", {"OCR_ENGINE": "off"}):
+        assert ocr_utils.run_ocr_lines(dummy_img) == []
+
+    # Simulate isolated PaddleOCR worker crashing with SIGSEGV (-11)
+    ocr_utils._PADDLE_CRASHED = False
+    mock_proc = MagicMock(returncode=-11, stdout="", stderr="Segmentation fault")
+    with patch("subprocess.run", return_value=mock_proc):
+        assert ocr_utils._run_paddle_lines_isolated(dummy_img) == []
+        assert ocr_utils._PADDLE_CRASHED is True
+    ocr_utils._PADDLE_CRASHED = False
+
+
+def test_weight_validation_and_expected_weight_mapping():
+    from unittest.mock import patch
+    from edge.core.api_client import EdgeApiClient
+    from contracts.schemas import PackageVerificationResponse
+
+    # 1. Server sends max_allowed_weight=5000 (locker capacity) and declared_weight_grams=500 (order weight)
+    resp = PackageVerificationResponse(
+        action="UNLOCK_DOOR",
+        locker_number=1,
+        order_id=10,
+        max_allowed_weight=5000,
+        declared_weight_grams=500,
+    )
+    client = EdgeApiClient()
+    with patch.object(client, "verify_package", return_value=resp):
+        auth = client.request_door_unlock(ScanResult(tracking_number="SPX123", ocr_weight=500))
+    assert auth.expected_weight == 500.0
+    assert auth.max_allowed_weight == 5000.0
+
+    # 2. Relaxed mode: valid weight within [20g, 5000g] passes even if deviating from expected_weight
+    res_ok = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=250.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_ok.status == DepositStatus.SUCCESS
+    assert res_ok.action == DepositAction.CONFIRM_SERVER_AND_LOCK
+
+    # 3. Overweight > max_allowed_weight (5000g) still rejects
+    res_over = verify_deposit_integrity(
+        auth,
+        WeightMeasurement(locker_id=1, delta_weight=5500.0, is_stable=True),
+        strict_expected_match=False,
+    )
+    assert res_over.status == DepositStatus.WEIGHT_MISMATCH
+    assert res_over.action == DepositAction.TRIGGER_BUZZER_ALARM
+
+
+def test_custom_keypad_matrix_layout():
+    from edge.core.keypad import KEYPAD_MATRIX
+
+    flat = [k for row in KEYPAD_MATRIX for k in row]
+    # S1-S9 map cleanly to digits 1-9
+    assert flat[:9] == ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    # S10 (index 9) is disabled
+    assert flat[9] == ""
+    # Essential keys exist
+    assert "0" in flat
+    assert "*" in flat
+    assert "#" in flat
 
 
 if __name__ == "__main__":

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SmartLocker - Khách hàng</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Khách hàng</h1>
+        </div>
+        <div class="top-bar-actions">
+          <button onclick="initUsersPage()" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="responsive-two-col">
+        <div class="form-card">
+          <div class="bento-title" style="margin-bottom:14px;"><span data-fa="user"></span> Tạo tài khoản</div>
+          <form id="createUserForm">
+            <div class="form-group">
+              <label for="newFullName">Họ tên</label>
+              <input type="text" id="newFullName" class="form-control" placeholder="Lê Văn Cường" required>
+            </div>
+            <div class="form-group">
+              <label for="newPhone">Số điện thoại</label>
+              <input type="text" id="newPhone" class="form-control" placeholder="0912345678" required>
+            </div>
+            <div class="form-group">
+              <label for="newPassword">Mật khẩu</label>
+              <input type="text" id="newPassword" class="form-control" value="123456" placeholder="123456">
+            </div>
+            <button type="submit" class="action-pill-btn block"><span data-fa="check"></span> Tạo</button>
+          </form>
+          <div id="createUserResult" style="display:none;"></div>
+        </div>
+
+        <div class="bento-card">
+          <div class="bento-title" style="margin-bottom:14px;">Danh sách</div>
+          <div class="table-container">
+            <table id="usersTable">
+              <thead>
+                <tr>
+                  <th>Khách hàng</th>
+                  <th>SĐT</th>
+                  <th>Face ID</th>
+                  <th>Telegram</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/core/icons.js"></script>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initUsersPage();
+    });
+  </script>
+</body>
+</html>
+

@@ -1,12 +1,25 @@
+# ==============================================================================
+# SMART PARCEL LOCKER - EDGE CV, OCR & HARDWARE DEPENDENCIES
+# ==============================================================================
+
+# 1. Core Contracts & Network Communication
 pydantic>=2.6.0
 requests>=2.31.0
-opencv-python-headless>=4.8.0
-pyzbar>=0.1.9
-# Optional on Pi for OCR:
-# paddlepaddle
-# paddleocr
-# Physical Pi dependencies (will be mocked automatically on non-Pi platforms):
-# RPi.GPIO>=0.7.1
-# spidev>=3.6
-# smbus2>=0.4.3
+python-dotenv>=1.0.1
 
+# 2. Image Processing & 1D/2D Barcode / QR Decoding (pyzbar)
+# System dependencies on Raspberry Pi: libzbar0/libzbar0t64, python3-opencv, python3-picamera2, tesseract-ocr
+opencv-python-headless>=4.8.0,<4.12
+Pillow>=10.0.0
+numpy>=1.24.0,<2.4.0
+pyzbar>=0.1.9
+
+# 3. OCR Engine (Waybill Weight & Shopee/TikTok Screenshot Extraction)
+# pytesseract is the lightweight ARM-safe engine for Raspberry Pi alongside PaddleOCR
+pytesseract>=0.3.10
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0
+
+# 4. Physical Hardware Interfaces on Raspberry Pi
+# Note: RPi.GPIO is provided via `python3-rpi-lgpio` (apt) on Raspberry Pi OS Bookworm/Trixie
+smbus2>=0.4.3

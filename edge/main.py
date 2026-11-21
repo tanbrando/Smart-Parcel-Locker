@@ -6,6 +6,12 @@ import sys
 import time
 import signal
 import logging
+from pathlib import Path
+
+# Ensure monorepo root is in sys.path so 'contracts' and 'edge' import cleanly
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from edge.config import MOCK_HARDWARE, SERVER_API_URL
 from edge.core.fsm import LockerStateMachine
@@ -23,7 +29,8 @@ def setup_signal_handlers(fsm: LockerStateMachine):
     def handle_exit(sig, frame):
         logger.info("\nReceived exit signal (%s). Cleaning up hardware...", sig)
         try:
-            fsm.indicators.clear()
+            fsm.indicators.cleanup()
+            fsm.lock.cleanup()
             if not MOCK_HARDWARE:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()
@@ -82,11 +89,25 @@ def main():
                 break
     else:
         # On physical Pi, run main event loop
-        logger.info("Listening for physical button / keypad events...")
+        logger.info("Listening for physical keypad events (*: Gửi hàng, #: Nhận hàng)...")
         while True:
-            time.sleep(0.5)
+            try:
+                key = fsm.keypad.scan_single_key()
+                if key == "*":
+                    logger.info("Phím '*' được nhấn -> Bắt đầu quy trình Gửi hàng (Courier Deposit)...")
+                    fsm.handle_courier_deposit()
+                    fsm.reset_to_idle()
+                elif key == "#" or (key and key.isdigit()):
+                    logger.info("Phím '%s' được nhấn -> Bắt đầu quy trình Nhận hàng (Recipient Pickup)...", key)
+                    fsm.handle_recipient_pickup()
+                    fsm.reset_to_idle()
+                time.sleep(0.08)
+            except (KeyboardInterrupt, SystemExit):
+                break
+            except Exception as exc:
+                logger.error("Lỗi trong vòng lặp sự kiện phần cứng: %s", exc)
+                time.sleep(1.0)
 
 
 if __name__ == "__main__":
     main()
-

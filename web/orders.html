@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SmartLocker - Đơn hàng</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Đơn hàng</h1>
+        </div>
+        <div class="top-bar-actions">
+          <button onclick="initOrdersPage()" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-pills-row" style="margin-bottom:0;">
+        <button class="filter-pill active" data-filter="ALL" onclick="setOrderFilter('ALL')">Tất cả</button>
+        <button class="filter-pill" data-filter="STORED" onclick="setOrderFilter('STORED')">Trong tủ</button>
+        <button class="filter-pill" data-filter="REGISTERED" onclick="setOrderFilter('REGISTERED')">Chờ giao</button>
+        <button class="filter-pill" data-filter="COLLECTED" onclick="setOrderFilter('COLLECTED')">Đã nhận</button>
+      </div>
+
+      <div class="bento-card">
+        <div class="table-container">
+          <table id="ordersTable">
+            <thead>
+              <tr>
+                <th>Mã vận đơn</th>
+                <th>Khách</th>
+                <th>Trạng thái</th>
+                <th>Ngăn</th>
+                <th title="Dự kiến (OCR) → thực tế (cân)">Cân nặng</th>
+                <th>OTP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">Đang tải...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/core/icons.js"></script>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initOrdersPage();
+    });
+  </script>
+</body>
+</html>
+

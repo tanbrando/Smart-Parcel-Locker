@@ -32,4 +32,9 @@ __all__ = [
 
 
 
+def wait_for_door_closed(locker_id: int, timeout_seconds: float = 60.0) -> bool:
+    """Contract convenience function to wait for locker door closure."""
+    return get_lock_controller().wait_for_door_closed(locker_id=locker_id, timeout_seconds=timeout_seconds)
+
+
 

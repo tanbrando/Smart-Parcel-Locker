@@ -4,9 +4,17 @@ Hardware Pinout and System Configurations for Raspberry Pi 4B Edge Device.
 import os
 from typing import Dict, List
 
+# Load .env configuration if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+except ImportError:
+    pass
+
 # Server Network Configuration
 SERVER_API_URL: str = os.getenv("SERVER_API_URL", "http://localhost:8000")
-API_TIMEOUT_SECONDS: float = float(os.getenv("API_TIMEOUT_SECONDS", "5.0"))
+API_TIMEOUT_SECONDS: float = float(os.getenv("API_TIMEOUT_SECONDS", "15.0"))
 
 # Hardware Mock Mode Switch
 # Automatically true if not running on Raspberry Pi or if env var is set
@@ -23,6 +31,25 @@ CAMERA_INDEX: int = int(os.getenv("CAMERA_INDEX", "0"))
 CAMERA_FRAME_WIDTH: int = 1280
 CAMERA_FRAME_HEIGHT: int = 720
 SCAN_TIMEOUT_SECONDS: float = 12.0
+
+# Camera Mode: "test" (uses static image from test folder) or "raspberry" / "live" (uses CSI / USB Camera on Pi)
+DEFAULT_CAMERA_MODE: str = "test" if MOCK_HARDWARE else "raspberry"
+CAMERA_MODE: str = os.getenv("CAMERA_MODE", DEFAULT_CAMERA_MODE).lower()
+USE_CSI_CAMERA: bool = os.getenv("USE_CSI_CAMERA", "true").lower() in ("true", "1", "yes")
+
+# Default test image paths
+EDGE_DIR: str = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR: str = os.getenv("PADDLE_PDX_CACHE_HOME", os.path.join(EDGE_DIR, "models", "paddlex"))
+os.environ["PADDLE_PDX_CACHE_HOME"] = MODELS_DIR
+
+DEFAULT_TEST_CAMERA_IMAGE: str = os.getenv(
+    "TEST_CAMERA_IMAGE",
+    os.path.join(EDGE_DIR, "test", "cameras", "shopee.jpg"),
+)
+DEFAULT_TEST_SCREENSHOT_IMAGE: str = os.getenv(
+    "TEST_SCREENSHOT_IMAGE",
+    os.path.join(EDGE_DIR, "test", "screenshots", "shopee.jpg"),
+)
 
 # GPIO Pinout Mapping (BCM Numbers)
 # Servo Motors (PWM control for door locking/opening mechanism, e.g., SG90 / MG996R)
@@ -77,6 +104,7 @@ HX711_DT_PIN: int = 5
 HX711_SCK_PIN: int = 6
 LOADCELL_CALIBRATION_FACTOR: float = 420.0  # Sensor-specific calibration scale
 WEIGHT_TOLERANCE_GRAMS: float = 150.0       # Max deviation between declared & measured
+STRICT_WEIGHT_MATCH: bool = os.getenv("STRICT_WEIGHT_MATCH", "false").lower() in ("true", "1", "yes")
 WEIGH_STABILIZATION_TIME_SEC: float = 3.0
 
 # 4x4 Matrix Keypad Pinout
@@ -93,4 +121,3 @@ LCD_ROWS: int = 2
 
 BUZZER_PIN: int = 26
 BUZZER_ACTIVE_HIGH: bool = True
-
