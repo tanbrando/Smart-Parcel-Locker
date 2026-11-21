@@ -207,7 +207,30 @@ class LockerStateMachine:
             self.transition_to(SystemState.IDLE)
             return False
 
+    def handle_face_pickup(self, account_id=None):
+        """Open the server-authorized compartment after five-angle verification."""
+        if self.keypad.is_locked_out():
+            return False
+        self.indicators.display_message("Enter account ID", "# to confirm")
+        if account_id is None:
+            account_id = self.keypad.get_pin_input(max_digits=10)
+        if not account_id or not account_id.isascii() or not account_id.isdigit() or len(account_id) > 10:
+            return False
+        try:
+            from edge.core.face_pickup import verify_pickup
+
+            result = verify_pickup(self.api_client, int(account_id), self.indicators)
+            if result.valid and result.locker_number is not None:
+                self.keypad.reset_attempts()
+                return bool(self.lock.open_locker_door(result.locker_number))
+        except (ImportError, KeyError, RuntimeError, OSError, ValueError) as exc:
+            logger.warning("Face pickup failed: %s", exc)
+        self.keypad.record_failed_attempt()
+        self.indicators.error_sound()
+        self.indicators.display_message("Face ID failed", "Try again")
+        return False
+
     def reset_to_idle(self):
         """Displays ready state."""
         self.transition_to(SystemState.IDLE)
-        self.indicators.display_message("Smart Parcel Locker", "Press * (Drop)/# (Pick)")
+        self.indicators.display_message("Smart Locker", "* Drop # OTP D Face")

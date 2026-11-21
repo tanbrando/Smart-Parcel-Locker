@@ -3,7 +3,6 @@ Authentication & Multi-Angle Face Recognition Enrollment Router.
 Handles User/Admin login, session inspection, and 5-angle facial authentication setup.
 """
 import json
-from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
@@ -24,10 +23,20 @@ from server.core.security import (
 )
 from server.db.session import get_db
 from server.db.models import User, AccessLog
+from server.services.face import extract_templates
 
 router = APIRouter(prefix="/auth", tags=["Authentication & Face ID"])
 
 REQUIRED_FACE_ANGLES = ("front", "left", "right", "up", "down")
+
+
+def require_face_account(authorization, user_id):
+    session = (
+        parse_session_token(authorization[7:])
+        if authorization and authorization.startswith("Bearer ") else None
+    )
+    if not session or session[0] != user_id:
+        raise HTTPException(status_code=403, detail="Vui lòng đăng nhập bằng tài khoản cần thay đổi.")
 
 
 def _serialize_user(user: User) -> UserResponse:
@@ -101,8 +110,10 @@ def get_current_user(
 
 
 @router.post("/face/toggle", response_model=FaceEnrollResponse)
-def toggle_face_auth(payload: FaceToggleRequest, db: Session = Depends(get_db)):
+def toggle_face_auth(payload: FaceToggleRequest, db: Session = Depends(get_db),
+                     authorization: Optional[str] = Header(None)):
     """Enables or disables facial authentication for a specific user."""
+    require_face_account(authorization, payload.user_id)
     user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng.")
@@ -134,8 +145,10 @@ def toggle_face_auth(payload: FaceToggleRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/face/enroll", response_model=FaceEnrollResponse)
-def enroll_face_multi_angle(payload: FaceEnrollMultiAngleRequest, db: Session = Depends(get_db)):
+def enroll_face_multi_angle(payload: FaceEnrollMultiAngleRequest, db: Session = Depends(get_db),
+                            authorization: Optional[str] = Header(None)):
     """Stores 5-angle facial registration data (front, left, right, up, down) and activates Face ID."""
+    require_face_account(authorization, payload.user_id)
     user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng.")
@@ -150,15 +163,17 @@ def enroll_face_multi_angle(payload: FaceEnrollMultiAngleRequest, db: Session = 
             detail=f"Thiếu dữ liệu góc chụp khuôn mặt: {', '.join(missing)}. Cần đủ 5 góc.",
         )
 
-    # Store compact metadata + cropped preview reference per angle
-    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        model_id, templates = extract_templates(provided_angles)
+        if any(float(templates["front"] @ vector) < 0.45 for vector in templates.values()):
+            raise ValueError("Các ảnh đăng ký phải thuộc cùng một người.")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     stored_payload = {
-        angle: {
-            "captured_at": now_iso,
-            "size_bytes": len(img_str),
-            "preview": img_str[:12000],  # cap per-angle storage footprint in SQLite
-        }
-        for angle, img_str in provided_angles.items()
+        angle: {"model_id": model_id, "embedding": vector.tolist()}
+        for angle, vector in templates.items()
     }
 
     user.face_data_json = json.dumps(stored_payload, ensure_ascii=False)

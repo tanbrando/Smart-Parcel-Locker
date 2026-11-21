@@ -20,8 +20,8 @@ window.PortalFaceIdTab = (() => {
     { key: "down", label: "Cúi xuống", faIcon: "arrow-down", targetX: 200, targetY: 190, eyeLineY: 162, noseCurve: "M 200 66 L 200 246" },
   ];
 
-  const CAPTURE_W = 240;
-  const CAPTURE_H = 180;
+  const CAPTURE_W = 640;
+  const CAPTURE_H = 480;
 
   let currentUser = null;
   let activeAngleIndex = 0;
@@ -369,10 +369,7 @@ window.PortalFaceIdTab = (() => {
     canvas.width = CAPTURE_W;
     canvas.height = CAPTURE_H;
     const ctx = canvas.getContext("2d");
-    ctx.save();
-    ctx.scale(-1, 1);
-    drawCover(ctx, video, video.videoWidth, video.videoHeight, -CAPTURE_W, 0);
-    ctx.restore();
+    drawCover(ctx, video, video.videoWidth, video.videoHeight);
     storeCapture(canvas.toDataURL("image/jpeg", 0.68));
   }
 
@@ -493,6 +490,8 @@ window.PortalFaceIdTab = (() => {
 
   function init(user) {
     currentUser = user;
+    const accountId = $("facePickupAccountId");
+    if (accountId) accountId.textContent = `Mã tài khoản tại tủ: ${user.id}`;
     renderAngleSteps();
     refreshStatus();
 
