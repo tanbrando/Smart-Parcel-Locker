@@ -107,14 +107,15 @@ class LockerStateMachine:
         order_id = auth.order_id or 0
         logger.info("Package authorized for Locker %d", locker_id)
 
-        # 3. Unlock locker door (servo -> UNLOCKED)
+        # 3. Capture dynamic pre-deposit baseline, then unlock locker door (servo -> 90 deg)
+        before_cm = self.ultrasonic.capture_reference_baseline(locker_id)
         self.transition_to(SystemState.UNLOCKED_DEPOSIT)
         self.indicators.success_sound()
-        self.indicators.display_message(f"Locker {locker_id} Open", "Insert Parcel")
+        self.indicators.display_message(f"Locker {locker_id} Open", "Put & Press C")
         self.lock.unlock_door(locker_id)
 
-        # 4. Wait for door close & check occupancy via Ultrasonic Sensor
-        if not self.lock.wait_for_door_closed(locker_id):
+        # 4. Wait for close key 'C' (or door switch) & check differential occupancy (delta >= 1.0cm)
+        if not self.lock.wait_for_door_closed(locker_id, keypad=self.keypad):
             self.indicators.error_sound()
             self.indicators.display_message("Close Door", "Door not closed")
             self.transition_to(SystemState.ERROR)
@@ -123,7 +124,7 @@ class LockerStateMachine:
             return False
 
         self.indicators.display_message("Checking Locker", "Please wait...")
-        occupancy = self.ultrasonic.is_locker_occupied(locker_id)
+        occupancy = self.ultrasonic.is_locker_occupied(locker_id, reference_cm=before_cm)
         decision = verify_occupancy_integrity(occupancy)
 
         if decision.action != DepositAction.CONFIRM_SERVER_AND_LOCK:
@@ -203,9 +204,14 @@ class LockerStateMachine:
             self.keypad.reset_attempts()
             self.transition_to(SystemState.RETRIEVING)
             self.indicators.success_sound()
-            self.indicators.display_message(f"Locker {target_locker} Open", "Take Your Parcel")
+            self.indicators.display_message(f"Locker {target_locker} Open", "Take & Press C")
             self.lock.open_locker_door(target_locker)
-            time.sleep(2.0)
+            # Wait for user to take parcel, shut door and press 'C' (or 15s auto-lock)
+            self.keypad.wait_for_close_key(timeout=15.0, close_key="C")
+            self.lock.lock_door(target_locker)
+            self.indicators.display_message(f"Locker {target_locker} Lock", "Thank you!")
+            self.ultrasonic.capture_reference_baseline(target_locker)
+            time.sleep(1.5)
             self.transition_to(SystemState.IDLE)
             return True
         else:
@@ -232,7 +238,15 @@ class LockerStateMachine:
             result = verify_pickup(self.api_client, int(account_id), self.indicators)
             if result.valid and result.locker_number is not None:
                 self.keypad.reset_attempts()
-                return bool(self.lock.open_locker_door(result.locker_number))
+                locker_num = result.locker_number
+                opened = bool(self.lock.open_locker_door(locker_num))
+                if opened:
+                    self.indicators.success_sound()
+                    self.indicators.display_message(f"Locker {locker_num} Open", "Take & Press C")
+                    self.keypad.wait_for_close_key(timeout=15.0, close_key="C")
+                    self.lock.lock_door(locker_num)
+                    self.ultrasonic.capture_reference_baseline(locker_num)
+                return opened
         except (ImportError, KeyError, RuntimeError, OSError, ValueError) as exc:
             logger.warning("Face pickup failed: %s", exc)
         self.keypad.record_failed_attempt()
@@ -240,7 +254,22 @@ class LockerStateMachine:
         self.indicators.display_message("Face ID failed", "Try again")
         return False
 
+    def handle_manual_close(self) -> bool:
+        """Triggered by key 'C' (S12) in IDLE: locks all currently open lockers back to 0 deg."""
+        closed = self.lock.lock_all_open_doors()
+        if closed:
+            for lid in closed:
+                self.ultrasonic.capture_reference_baseline(lid)
+            self.indicators.success_sound()
+            self.indicators.display_message("Locker Closed", f"Locked: {','.join(map(str, closed))}")
+            logger.info("Manual close ('C'): locked open locker(s) %s", closed)
+        else:
+            self.indicators.beep(duration=0.06, count=1)
+            self.indicators.display_message("All Locked", "No open door")
+        time.sleep(1.0)
+        return bool(closed)
+
     def reset_to_idle(self):
         """Displays ready state."""
         self.transition_to(SystemState.IDLE)
-        self.indicators.display_message("Smart Locker", "* Drop # OTP D Face")
+        self.indicators.display_message("Smart Locker", "*In #OTP C:Lock")

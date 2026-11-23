@@ -62,14 +62,15 @@ def main():
     fsm.reset_to_idle()
 
     logger.info("\n--- Demonstration / Interactive Edge Menu ---")
-    logger.info("1: Trigger Courier Deposit Workflow (Scan -> Verify -> Unlock -> Weigh -> Confirm)")
-    logger.info("2: Trigger Recipient Pickup Workflow (Keypad OTP -> Verify -> Unlock)")
+    logger.info("1: Trigger Courier Deposit Workflow (Scan -> Verify -> Unlock -> Press C -> HC-SR04 -> Lock)")
+    logger.info("2: Trigger Recipient Pickup Workflow (Keypad OTP -> Verify -> Unlock -> Press C -> Lock)")
     logger.info("3: Health check server")
     logger.info("4: Recipient pickup by Face ID (account ID + camera)")
+    logger.info("c: Close & lock any open locker(s)")
     logger.info("q: Exit\n")
 
     if MOCK_HARDWARE:
-        logger.info("Running in interactive emulation mode. Enter option [1/2/3/4/q]:")
+        logger.info("Running in interactive emulation mode. Enter option [1/2/3/4/c/q]:")
         while True:
             try:
                 choice = input("Edge Command > ").strip().lower()
@@ -83,22 +84,28 @@ def main():
                     print(f"Server health: {'ONLINE' if alive else 'OFFLINE'}")
                 elif choice == "4":
                     fsm.handle_face_pickup(input("Account ID: ").strip())
+                elif choice == "c":
+                    fsm.handle_manual_close()
                 elif choice in ("q", "quit", "exit"):
                     break
                 else:
-                    print("Unknown command. Enter 1, 2, 3, 4, or q.")
+                    print("Unknown command. Enter 1, 2, 3, 4, c, or q.")
                 fsm.reset_to_idle()
             except (KeyboardInterrupt, EOFError):
                 break
     else:
         # On physical Pi, run main event loop
-        logger.info("Listening for keypad events (*: deposit, #: OTP pickup, D: Face ID pickup)...")
+        logger.info("Listening for keypad events (*: deposit, #: OTP pickup, C: close/lock open doors, D: Face ID)...")
         while True:
             try:
                 key = fsm.keypad.scan_single_key()
                 if key == "*":
                     logger.info("Phím '*' được nhấn -> Bắt đầu quy trình Gửi hàng (Courier Deposit)...")
                     fsm.handle_courier_deposit()
+                    fsm.reset_to_idle()
+                elif key == "C":
+                    logger.info("Phím 'C' (S12) được nhấn -> Đóng & khóa các ngăn tủ đang mở...")
+                    fsm.handle_manual_close()
                     fsm.reset_to_idle()
                 elif key == "D":
                     fsm.handle_face_pickup()

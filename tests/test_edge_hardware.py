@@ -69,46 +69,72 @@ def test_ultrasonic_baseline_calibration():
 
 def test_servo_lock_state_transitions():
     lock = ServoLockController(mock_mode=True)
-    # Default state is UNLOCKED
-    assert lock.get_lock_state(1) == LockState.UNLOCKED
-
-    # Lock door
-    assert lock.lock_door(1) is True
+    # Default state is LOCKED (0 deg) for security
     assert lock.get_lock_state(1) == LockState.LOCKED
 
     # Unlock door
     assert lock.unlock_door(1) is True
     assert lock.get_lock_state(1) == LockState.UNLOCKED
 
+    # Lock door
+    assert lock.lock_door(1) is True
+    assert lock.get_lock_state(1) == LockState.LOCKED
+
 
 def test_lock_if_occupied_logic():
     lock = ServoLockController(mock_mode=True)
-    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=5.0)
+    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=1.0)
 
     # Inject mock sensor into global singleton
     import edge.hardware.ultrasonic_sensor as us_mod
     us_mod._default_ultrasonic_sensor = sensor
 
     # --- Case 1: Door is physically OPEN ---
+    lock.unlock_door(1)
     lock.set_mock_door_closed(False, locker_id=1)
     sensor.set_mock_distance(15.0, locker_id=1)  # Parcel is inside but door is open
     decision = lock.lock_if_occupied(locker_id=1)
     assert decision == LockDecision.DOOR_OPEN
     assert lock.get_lock_state(1) == LockState.UNLOCKED
 
-    # --- Case 2: Door CLOSED + Parcel PRESENT (Occupied) -> LOCK ---
+    # --- Case 2: Door CLOSED + Parcel PRESENT (delta >= 1.0cm) -> LOCK ---
     lock.set_mock_door_closed(True, locker_id=1)
-    sensor.set_mock_distance(15.0, locker_id=1)
+    sensor.set_mock_distance(33.8, locker_id=1)  # 1.2cm delta >= 1.0cm
     decision = lock.lock_if_occupied(locker_id=1)
     assert decision == LockDecision.LOCKED
     assert lock.get_lock_state(1) == LockState.LOCKED
 
     # --- Case 3: Door CLOSED + EMPTY (No Parcel) -> REMAIN UNLOCKED ---
     lock.set_mock_door_closed(True, locker_id=1)
-    sensor.set_mock_distance(35.0, locker_id=1)  # Empty
+    sensor.set_mock_distance(34.6, locker_id=1)  # 0.4cm delta < 1.0cm -> Empty
     decision = lock.lock_if_occupied(locker_id=1)
     assert decision == LockDecision.EMPTY_NOT_LOCKED
     assert lock.get_lock_state(1) == LockState.UNLOCKED
+
+
+def test_auto_baseline_1cm_delta_and_close_all_open_doors():
+    """Verifies dynamic pre-deposit baseline (1cm delta) and key-'C' lock_all_open_doors()."""
+    sensor = UltrasonicSensor(mock_mode=True, baseline_empty_cm=35.0, occupied_margin_cm=1.0)
+    # Locker 3 physical height is actually 24.0 cm (not hardcoded 35 cm)
+    sensor.set_mock_distance(24.0, locker_id=3)
+    ref_cm = sensor.capture_reference_baseline(locker_id=3, force_measure=True)
+    assert ref_cm == 24.0
+
+    # Place a thin 1.2 cm parcel -> distance becomes 22.8 cm -> detected!
+    sensor.set_mock_distance(22.8, locker_id=3)
+    occ = sensor.is_locker_occupied(locker_id=3, reference_cm=ref_cm)
+    assert occ.occupied is True
+    assert occ.distance_cm == 22.8
+    assert occ.baseline_cm == 24.0
+
+    # Test key 'C' manual close locks all currently open lockers
+    lock = ServoLockController(mock_mode=True, active_lockers=[1, 2, 3, 4])
+    lock.unlock_door(2)
+    lock.unlock_door(4)
+    closed = lock.lock_all_open_doors()
+    assert closed == [2, 4]
+    assert lock.get_lock_state(2) == LockState.LOCKED
+    assert lock.get_lock_state(4) == LockState.LOCKED
 
 
 def test_module_level_convenience_functions():

@@ -80,6 +80,7 @@ Theo [`KEYPAD_MATRIX`](edge/core/keypad.py#L27-L34) *(đã bố trí `1`–`9` l
 
 - Bấm **`*` (`S13`)**: Khởi động Camera quét mã vận đơn (luồng Shipper gửi hàng) hoặc xóa lùi khi đang nhập số.
 - Bấm **`#` (`S15`)** *(hoặc bấm trực tiếp chữ số đầu tiên)*: Nhập **6 chữ số OTP** để mở tủ lấy hàng (hỗ trợ mở tất cả các đơn gộp chung ngăn tủ).
+- Bấm **`C` (`S12`)**: Xác nhận **Đóng & Khóa ngăn tủ đang mở** về `0°` (dùng sau khi Shipper bỏ hàng / Khách lấy hàng, hoặc nhấn bất kỳ lúc nào ở màn hình chờ).
 - Bấm **`D` (`S16`)**: Mở tủ bằng **Face ID** (nhập Account ID → nhấn `#` → quét khuôn mặt 5 góc qua Camera Pi).
 
 ---

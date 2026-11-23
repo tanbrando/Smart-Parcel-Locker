@@ -150,6 +150,19 @@ class KeypadReader:
 
         return "".join(buffer)
 
+    def wait_for_close_key(self, timeout: float = 15.0, close_key: str = "C") -> bool:
+        """Waits for the user to press the close-door key ('C' / S12) on the keypad."""
+        if self.mock_mode:
+            return True
+        deadline = time.time() + max(0.1, timeout)
+        while time.time() < deadline:
+            key = self.scan_single_key()
+            if key == close_key:
+                logger.info("[Keypad] Close key '%s' pressed.", close_key)
+                return True
+            time.sleep(0.06)
+        return False
+
     def listen_keypad_otp(
         self,
         timeout: float = 30.0,

@@ -108,8 +108,8 @@ ULTRASONIC_ECHO_PINS: Dict[int, int] = {
 }
 
 # Ultrasonic calibration and threshold (cm)
-BASELINE_EMPTY_CM: float = float(os.getenv("BASELINE_EMPTY_CM", "35.0"))  # Empty locker height
-OCCUPIED_MARGIN_CM: float = float(os.getenv("OCCUPIED_MARGIN_CM", "5.0"))  # Margin to trigger occupied
+BASELINE_EMPTY_CM: float = float(os.getenv("BASELINE_EMPTY_CM", "35.0"))  # Fallback empty locker height
+OCCUPIED_MARGIN_CM: float = float(os.getenv("OCCUPIED_MARGIN_CM", "1.0"))  # Auto delta >= 1.0cm detects parcel
 MIN_FREE_DISTANCE_CM: float = float(os.getenv("MIN_FREE_DISTANCE_CM", "8.0"))  # Min clearance to allow batching
 ULTRASONIC_TIMEOUT_SEC: float = 0.03  # Max echo timeout (~5 meters roundtrip)
 ULTRASONIC_SAMPLE_COUNT: int = 5      # Number of samples for median filter

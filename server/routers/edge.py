@@ -220,7 +220,7 @@ def confirm_deposit(req: DepositConfirmationRequest, db: Session = Depends(get_d
 
     if req.distance_cm is not None:
         distance_cm = float(req.distance_cm)
-        parcel_detected = (empty_dist - distance_cm) >= 3.0
+        parcel_detected = (empty_dist - distance_cm) >= 1.0
         weight_matched = parcel_detected
         deviation_gram = 0
     else:

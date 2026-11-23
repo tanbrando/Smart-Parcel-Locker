@@ -176,16 +176,38 @@ class UltrasonicSensor:
         logger.warning("Calibration failed, keeping default baseline: %.2f cm", fallback)
         return fallback
 
+    def capture_reference_baseline(
+        self,
+        locker_id: int = 1,
+        samples: int = 5,
+        force_measure: bool = False,
+    ) -> float:
+        """
+        Automatically captures the live distance inside locker_id right BEFORE opening the door.
+        Allows differential parcel detection (delta >= 1.0 cm) without hardcoding locker height,
+        including when stacking a second parcel for the same user.
+        """
+        fallback = self.baselines_cm.get(locker_id, self.baseline_empty_cm)
+        if self.mock_mode and not force_measure:
+            return fallback
+        d = self.measure_distance_cm(locker_id, samples=samples, sample_delay_sec=0.02)
+        if d is not None and d > 0:
+            self.baselines_cm[locker_id] = d
+            logger.info("Captured dynamic pre-deposit baseline for locker %d: %.2f cm", locker_id, d)
+            return d
+        return fallback
+
     def is_locker_occupied(
         self,
         locker_id: int = 1,
         debounce_count: int = ULTRASONIC_DEBOUNCE_COUNT,
+        reference_cm: Optional[float] = None,
     ) -> OccupancyResult:
         """
-        Determines whether the locker contains a parcel using debounced consecutive readings.
-        Condition for occupied: distance < (baseline_cm - occupied_margin_cm).
+        Determines whether a parcel is present using differential distance analysis:
+        delta = reference_cm - current_distance_cm >= occupied_margin_cm (default 1.0 cm).
         """
-        baseline_cm = self.baselines_cm.get(locker_id, self.baseline_empty_cm)
+        baseline_cm = reference_cm if reference_cm is not None else self.baselines_cm.get(locker_id, self.baseline_empty_cm)
         threshold_cm = baseline_cm - self.occupied_margin_cm
         consecutive_results: List[bool] = []
         last_distance: Optional[float] = None
@@ -203,7 +225,8 @@ class UltrasonicSensor:
                     timestamp=datetime.now(timezone.utc),
                 )
             last_distance = dist
-            is_occ = dist < threshold_cm
+            delta_cm = baseline_cm - dist
+            is_occ = delta_cm >= self.occupied_margin_cm
             consecutive_results.append(is_occ)
             time.sleep(0.01)
 

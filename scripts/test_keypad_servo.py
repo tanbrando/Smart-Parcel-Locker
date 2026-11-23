@@ -230,6 +230,9 @@ def run_interactive_hardware_test(force_mock: bool = False):
                         toggle_servo(3)
                     elif key == "4":
                         toggle_servo(4)
+                    elif key == "C":
+                        closed = lock.lock_all_open_doors()
+                        print(f"   🔒 Phím 'C' -> Đã khóa các ngăn đang mở: {closed or 'Không có ngăn nào mở'}")
                     elif key == "*":
                         print("   🔄 Test tuần tự Servo 3 -> Servo 4...")
                         for lid in (3, 4):

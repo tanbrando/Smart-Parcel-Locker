@@ -51,9 +51,9 @@ class ServoLockController:
         self.door_switch_pins: Dict[int, int] = dict(DOOR_SWITCH_PINS)
         self.active_lockers: List[int] = list(active_lockers) if active_lockers is not None else list(ACTIVE_LOCKER_IDS)
 
-        # Default state: Empty lockers are UNLOCKED (per business requirements in TASK)
-        self.lock_states: Dict[int, LockState] = {k: LockState.UNLOCKED for k in self.servo_pins}
-        self.current_angles: Dict[int, float] = {k: SERVO_UNLOCKED_ANGLE for k in self.servo_pins}
+        # Default state: All lockers start LOCKED (0 deg) for security
+        self.lock_states: Dict[int, LockState] = {k: LockState.LOCKED for k in self.servo_pins}
+        self.current_angles: Dict[int, float] = {k: SERVO_LOCKED_ANGLE for k in self.servo_pins}
 
         # Door physical sensor state: True = Closed, False = Open
         # In mock mode, defaults to True (closed)
@@ -61,27 +61,27 @@ class ServoLockController:
         self.pwm_instances: Dict[int, Any] = {}
 
         if self.mock_mode:
-            logger.info("ServoLockController initialized in MOCK mode (Unlocked by default).")
+            logger.info("ServoLockController initialized in MOCK mode (Locked at 0 deg by default).")
         else:
             self._setup_hardware()
 
     def _setup_hardware(self):
         GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
-        # 1. Setup Servos sequentially (only for active_lockers to avoid touching unwired pins)
+        # 1. Setup Servos sequentially at LOCKED (0 deg)
         for locker_id, pin in self.servo_pins.items():
             if locker_id not in self.active_lockers:
                 logger.info("Locker %d Servo skipped (not in ACTIVE_LOCKER_IDS=%s)", locker_id, self.active_lockers)
                 continue
             GPIO.setup(pin, GPIO.OUT)
             pwm = GPIO.PWM(pin, SERVO_PWM_FREQUENCY)
-            duty = angle_to_duty_cycle(SERVO_UNLOCKED_ANGLE)
+            duty = angle_to_duty_cycle(SERVO_LOCKED_ANGLE)
             pwm.start(duty)
             time.sleep(0.3)
             # Detach PWM signal to prevent servo jitter & heat up
             pwm.ChangeDutyCycle(0)
             self.pwm_instances[locker_id] = pwm
-            logger.info("Locker %d Servo initialized on GPIO %d (UNLOCKED at %.1f deg)", locker_id, pin, SERVO_UNLOCKED_ANGLE)
+            logger.info("Locker %d Servo initialized on GPIO %d (LOCKED at %.1f deg)", locker_id, pin, SERVO_LOCKED_ANGLE)
 
         # 2. Setup Door Reed/Limit Switches (Internal Pull-Up enabled) if enabled
         if ENABLE_DOOR_SWITCH:
@@ -123,22 +123,31 @@ class ServoLockController:
         self,
         locker_id: int = 1,
         timeout_seconds: float = 30.0,
-        poll_interval: float = 0.2,
+        poll_interval: float = 0.08,
+        keypad: Optional[Any] = None,
     ) -> bool:
-        """Polls reed/limit switch until door is closed or timeout expires."""
+        """
+        Waits until the user presses the 'C' (S12) close key on the keypad,
+        or (if ENABLE_DOOR_SWITCH=true) the physical door switch closes.
+        """
         if self.mock_mode:
             return self.is_door_closed(locker_id)
 
-        if not ENABLE_DOOR_SWITCH:
-            logger.info("Door switch disabled: waiting 4.0s for courier to place parcel and close Locker %d...", locker_id)
-            time.sleep(4.0)
-            return True
-
+        logger.info("Waiting for Locker %d close confirmation (press 'C' on keypad)...", locker_id)
         deadline = time.time() + max(0.1, timeout_seconds)
         while time.time() < deadline:
-            if self.is_door_closed(locker_id):
+            if keypad is not None:
+                key = keypad.scan_single_key()
+                if key == "C":
+                    logger.info("Close key 'C' pressed for Locker %d.", locker_id)
+                    return True
+            if ENABLE_DOOR_SWITCH and self.is_door_closed(locker_id):
                 return True
             time.sleep(poll_interval)
+
+        if not ENABLE_DOOR_SWITCH:
+            logger.info("Timeout waiting for key 'C' on Locker %d; proceeding to check/lock.", locker_id)
+            return True
         return self.is_door_closed(locker_id)
 
     def _rotate_servo(self, locker_id: int, angle: float, settle_time: float = 0.4):
@@ -183,7 +192,18 @@ class ServoLockController:
 
     def get_lock_state(self, locker_id: int = 1) -> LockState:
         """Returns the current state (LOCKED | UNLOCKED) for locker_id."""
-        return self.lock_states.get(locker_id, LockState.UNLOCKED)
+        return self.lock_states.get(locker_id, LockState.LOCKED)
+
+    def lock_all_open_doors(self) -> List[int]:
+        """Locks all currently UNLOCKED active lockers back to 0 deg and returns their IDs."""
+        closed_ids: List[int] = []
+        for locker_id in sorted(self.servo_pins.keys()):
+            if locker_id not in self.active_lockers:
+                continue
+            if self.get_lock_state(locker_id) == LockState.UNLOCKED:
+                self.lock_door(locker_id)
+                closed_ids.append(locker_id)
+        return closed_ids
 
     def lock_if_occupied(self, locker_id: int = 1) -> LockDecision:
         """
