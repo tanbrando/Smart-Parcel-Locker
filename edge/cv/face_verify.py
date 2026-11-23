@@ -133,7 +133,11 @@ class FaceCamera:
                 return None, "Bring your chin a little closer to neutral"
             direction = "Raise" if required_pose == "up" else "Lower"
             return None, f"{direction} your chin a little more"
-        if pose is None or (required_pose is not None and pose != required_pose):
+        if required_pose is None:
+            if abs(yaw) > 0.45:
+                return None, "Face the camera more directly"
+            pose = pose or "front"
+        elif pose is None or pose != required_pose:
             return None, f"Detected pose: {pose or 'between poses'}"
         aligned = self.recognizer.alignCrop(frame, face)
         gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)

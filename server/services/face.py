@@ -167,6 +167,56 @@ def inspect_single_angle(pose: str, image: str, neutral_pitch: Optional[float] =
     }
 
 
+def extract_probe_vector(image: str):
+    """Extracts a single SFace unit embedding from a locker pickup camera image (single-look)."""
+    frame = _decode_jpeg_data_url(image, "front")
+    camera = _get_face_camera()
+    with _camera_lock:
+        sample, reason = camera._inspect(frame, required_pose=None, neutral_pitch=None)
+    if sample is None:
+        raise ValueError(_translate_reason_vi(reason, "front"))
+    _, vector, _ = sample
+    return camera.model_id, vector
+
+
+def score_against_enrolled(enrolled_data: dict, model_id: str, probe_vectors) -> float:
+    """Computes best cosine similarity between probe vector(s) and a user's multi-angle enrolled gallery + centroid."""
+    from edge.cv.face_verify import np, unit
+
+    if not isinstance(enrolled_data, dict) or not probe_vectors:
+        return -1.0
+
+    gallery = []
+    for entry in enrolled_data.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("model_id") != model_id:
+            continue
+        emb = entry.get("embedding")
+        if emb is None:
+            continue
+        try:
+            gallery.append(unit(emb))
+        except ValueError:
+            continue
+
+    if not gallery:
+        return -1.0
+
+    candidates = list(gallery)
+    if len(gallery) > 1:
+        try:
+            candidates.append(unit(np.mean(gallery, axis=0)))
+        except ValueError:
+            pass
+
+    probe_scores = [
+        max(float(candidate @ probe) for candidate in candidates)
+        for probe in probe_vectors
+    ]
+    return float(min(probe_scores)) if len(probe_scores) > 1 else float(probe_scores[0])
+
+
 def extract_templates(angles):
     from edge.cv.face_verify import POSE_PROMPTS
 

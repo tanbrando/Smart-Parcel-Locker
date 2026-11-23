@@ -65,7 +65,7 @@ def main():
     logger.info("1: Trigger Courier Deposit Workflow (Scan -> Verify -> Unlock -> Press C -> HC-SR04 -> Lock)")
     logger.info("2: Trigger Recipient Pickup Workflow (Keypad OTP -> Verify -> Unlock -> Press C -> Lock)")
     logger.info("3: Health check server")
-    logger.info("4: Recipient pickup by Face ID (account ID + camera)")
+    logger.info("4: Recipient pickup by Face ID (1-look auto-match camera)")
     logger.info("c: Close & lock any open locker(s)")
     logger.info("q: Exit\n")
 
@@ -83,7 +83,7 @@ def main():
                     alive = fsm.api_client.check_health()
                     print(f"Server health: {'ONLINE' if alive else 'OFFLINE'}")
                 elif choice == "4":
-                    fsm.handle_face_pickup(input("Account ID: ").strip())
+                    fsm.handle_face_pickup()
                 elif choice == "c":
                     fsm.handle_manual_close()
                 elif choice in ("q", "quit", "exit"):

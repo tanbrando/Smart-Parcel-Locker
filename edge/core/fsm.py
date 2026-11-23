@@ -223,21 +223,29 @@ class LockerStateMachine:
             self.transition_to(SystemState.IDLE)
             return False
 
-    def handle_face_pickup(self, account_id=None):
-        """Open the server-authorized compartment after five-angle verification."""
+    def handle_face_pickup(self, account_id: Optional[int] = None):
+        """Open the server-authorized compartment after single-look 1:N Face ID verification."""
         if self.keypad.is_locked_out():
+            remain = self.keypad.get_remaining_lockout_seconds()
+            self.indicators.error_sound()
+            self.indicators.display_message("Locked Out", f"Wait {remain}s")
             return False
-        self.indicators.display_message("Enter account ID", "# to confirm")
-        if account_id is None:
-            account_id = self.keypad.get_pin_input(max_digits=10)
-        if not account_id or not account_id.isascii() or not account_id.isdigit() or len(account_id) > 10:
-            return False
+
+        resolved_user_id: Optional[int] = None
+        if account_id is not None and str(account_id).strip():
+            raw_id = str(account_id).strip()
+            if not raw_id.isascii() or not raw_id.isdigit() or len(raw_id) > 10:
+                return False
+            resolved_user_id = int(raw_id)
+
+        self.transition_to(SystemState.VERIFYING)
         try:
             from edge.core.face_pickup import verify_pickup
 
-            result = verify_pickup(self.api_client, int(account_id), self.indicators)
+            result = verify_pickup(self.api_client, resolved_user_id, self.indicators)
             if result.valid and result.locker_number is not None:
                 self.keypad.reset_attempts()
+                self.transition_to(SystemState.RETRIEVING)
                 locker_num = result.locker_number
                 opened = bool(self.lock.open_locker_door(locker_num))
                 if opened:
@@ -245,13 +253,20 @@ class LockerStateMachine:
                     self.indicators.display_message(f"Locker {locker_num} Open", "Take & Press C")
                     self.keypad.wait_for_close_key(timeout=15.0, close_key="C")
                     self.lock.lock_door(locker_num)
+                    self.indicators.display_message(f"Locker {locker_num} Lock", "Thank you!")
                     self.ultrasonic.capture_reference_baseline(locker_num)
+                    time.sleep(1.5)
+                self.transition_to(SystemState.IDLE)
                 return opened
-        except (ImportError, KeyError, RuntimeError, OSError, ValueError) as exc:
+            logger.info("Face pickup rejected by server: %s", result.message)
+        except (ImportError, KeyError, RuntimeError, OSError, TimeoutError, ValueError) as exc:
             logger.warning("Face pickup failed: %s", exc)
         self.keypad.record_failed_attempt()
         self.indicators.error_sound()
         self.indicators.display_message("Face ID failed", "Try again")
+        self.transition_to(SystemState.ERROR)
+        time.sleep(1.5)
+        self.transition_to(SystemState.IDLE)
         return False
 
     def handle_manual_close(self) -> bool:

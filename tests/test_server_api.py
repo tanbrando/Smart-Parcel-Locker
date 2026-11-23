@@ -499,13 +499,14 @@ def test_face_auth_toggle_and_multi_angle_enrollment(db_session, monkeypatch):
     assert on_res.face_auth_enabled is True
 
     from server.routers import edge
+    from contracts.schemas import FacePickupRequest
 
     db_session.add(Order(user_id=1, locker_id=1, tracking_number="FACE-PICKUP-001",
                          status=OrderStatus.STORED))
     db_session.commit()
     monkeypatch.setenv("FACE_DEVICE_KEY", "test-device")
     monkeypatch.setattr(edge.notifier, "notify_parcel_collected", lambda **kwargs: None)
-    pickup = FaceEnrollMultiAngleRequest(user_id=1, angles=five_angles)
+    pickup = FacePickupRequest(user_id=1, angles=five_angles)
     with pytest.raises(HTTPException) as unauthorized:
         edge.verify_face(pickup, db=db_session, device_key="wrong")
     assert unauthorized.value.status_code == 403
@@ -521,6 +522,52 @@ def test_face_auth_toggle_and_multi_angle_enrollment(db_session, monkeypatch):
     result = edge.verify_face(pickup, db=db_session, device_key="test-device")
     assert result.valid and result.locker_number == 1
     assert not edge.verify_face(pickup, db=db_session, device_key="test-device").valid
+
+    # Single-look 1:N auto-identification (no user_id, only 1 image)
+    user2 = User(
+        full_name="Second Face User",
+        phone="0911222333",
+        phone_last4="2333",
+        password_hash="hash",
+        face_registered=1,
+        face_auth_enabled=1,
+        face_data_json='{"front": {"model_id": "model", "embedding": ' + str(wrong.tolist()) + '}}',
+    )
+    db_session.add(user2)
+    db_session.commit()
+    db_session.refresh(user2)
+
+    db_session.add(Order(user_id=user2.id, locker_id=2, tracking_number="FACE-1N-002",
+                         status=OrderStatus.STORED))
+    db_session.commit()
+
+    stranger = np.eye(128, dtype=np.float32)[2]
+    monkeypatch.setattr(edge, "extract_probe_vector", lambda img: ("model", stranger))
+    stranger_res = edge.verify_face(
+        FacePickupRequest(image="data:image/jpeg;base64,stranger"),
+        db=db_session,
+        device_key="test-device",
+    )
+    assert stranger_res.valid is False
+
+    monkeypatch.setattr(edge, "extract_probe_vector", lambda img: ("model", wrong))
+    auto_res = edge.verify_face(
+        FacePickupRequest(image="data:image/jpeg;base64,user2_single_look"),
+        db=db_session,
+        device_key="test-device",
+    )
+    assert auto_res.valid is True
+    assert auto_res.locker_number == 2
+    assert "Second Face User" in auto_res.message
+
+    # Same user looks again when no STORED parcel remains -> rejected with friendly message
+    empty_res = edge.verify_face(
+        FacePickupRequest(image="data:image/jpeg;base64,user2_single_look"),
+        db=db_session,
+        device_key="test-device",
+    )
+    assert empty_res.valid is False
+    assert "Second Face User" in empty_res.message
 
 
 def test_modular_web_portal_and_login_assets():

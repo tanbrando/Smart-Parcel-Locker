@@ -1,14 +1,15 @@
-"""Capture a guided five-angle pickup and submit it to the server."""
+"""Capture a single-look face image at the locker and submit it for 1:N verification."""
 import base64
 from contextlib import ExitStack
 import os
 from pathlib import Path
+from typing import Optional
 
 import requests
 
 from contracts.schemas import OtpVerificationResponse
 from edge.config import CAMERA_INDEX, CAMERA_PREVIEW, USE_CSI_CAMERA
-from edge.cv.face_verify import FaceCamera, PiCapture, POSE_PROMPTS, cv2
+from edge.cv.face_verify import FaceCamera, PiCapture, cv2
 
 
 def _preview_enabled() -> bool:
@@ -41,7 +42,8 @@ def _resolve_model_path(env_var: str, default_path: Path) -> Path:
     return default_path
 
 
-def verify_pickup(api, user_id, indicators):
+def verify_pickup(api, user_id: Optional[int] = None, indicators=None):
+    """Captures one clear look at the locker camera and requests 1:N (or optional 1:1) unlock."""
     device_key = os.environ.get("FACE_DEVICE_KEY", "").strip()
     if not device_key:
         raise RuntimeError("FACE_DEVICE_KEY is not configured. Run ./setup.sh to generate keys.")
@@ -51,8 +53,7 @@ def verify_pickup(api, user_id, indicators):
         raise RuntimeError("Face ONNX models missing. Run ./setup.sh to download YuNet & SFace.")
     model = FaceCamera(yunet_path, sface_path)
     use_preview = _preview_enabled()
-    photos = {}
-    neutral_pitch = None
+    accepted = []
     with ExitStack() as stack:
         if use_preview:
             stack.callback(cv2.destroyAllWindows)
@@ -68,25 +69,28 @@ def verify_pickup(api, user_id, indicators):
             stack.callback(camera.release)
             if not camera.isOpened():
                 raise ValueError("Cannot open camera")
-        for index, pose in enumerate(POSE_PROMPTS, 1):
-            prompts = {"front": "Look straight", "left": "Turn left", "right": "Turn right",
-                       "up": "Raise chin", "down": "Lower chin"}
-            indicators.display_message(f"Face ID {index}/5", prompts[pose])
-            accepted = []
-            _, _, pitch = model.capture(
-                camera, pose, preview=use_preview, neutral_pitch=neutral_pitch, frame_count=1,
-                on_capture=accepted.append,
-            )
-            if pose == "front":
-                neutral_pitch = pitch
-            ok, image = cv2.imencode(".jpg", accepted[0], [cv2.IMWRITE_JPEG_QUALITY, 88])
-            if not ok:
-                raise ValueError("Could not encode camera image")
-            photos[pose] = "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
+        if indicators is not None:
+            indicators.display_message("Face ID Pickup", "Look at camera")
+        model.capture(
+            camera,
+            required_pose=None,
+            preview=use_preview,
+            frame_count=2,
+            on_capture=accepted.append,
+        )
+    ok, image = cv2.imencode(".jpg", accepted[0], [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:
+        raise ValueError("Could not encode camera image")
+    payload = {
+        "image": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii"),
+    }
+    if user_id is not None:
+        payload["user_id"] = int(user_id)
     response = requests.post(
         f"{api.base_url}/api/v1/pi/verify-face",
-        json={"user_id": user_id, "angles": photos},
-        headers={"X-Face-Device-Key": device_key}, timeout=max(api.timeout, 30),
+        json=payload,
+        headers={"X-Face-Device-Key": device_key},
+        timeout=max(api.timeout, 30),
     )
     response.raise_for_status()
     return OtpVerificationResponse.model_validate(response.json())

@@ -596,7 +596,7 @@ window.PortalFaceIdTab = (() => {
   function init(user) {
     currentUser = user;
     const accountId = $("facePickupAccountId");
-    if (accountId) accountId.textContent = `Mã tài khoản tại tủ: ${user.id}`;
+    if (accountId) accountId.textContent = "Nhận hàng tại tủ: Nhấn phím D";
     renderAngleSteps();
     refreshStatus();
 

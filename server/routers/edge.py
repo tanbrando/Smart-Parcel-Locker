@@ -27,8 +27,8 @@ from server.core.security import generate_otp, is_otp_expired, otp_rate_limiter
 from server.db.session import get_db
 from server.db.models import Order, Locker, AccessLog, User
 from server.services.telegram import notifier
-from server.services.face import extract_templates
-from contracts.schemas import FaceEnrollMultiAngleRequest
+from server.services.face import extract_probe_vector, extract_templates, score_against_enrolled
+from contracts.schemas import FacePickupRequest
 
 logger = logging.getLogger("server.routers.edge")
 
@@ -352,40 +352,101 @@ def verify_otp(req: OtpVerificationRequest, db: Session = Depends(get_db)):
     return collect_orders(order, matched_orders, db)
 
 
+PICKUP_FACE_MATCH_THRESHOLD = 0.45
+
+
 @router.post("/verify-face", response_model=OtpVerificationResponse)
-def verify_face(payload: FaceEnrollMultiAngleRequest, db: Session = Depends(get_db),
+def verify_face(payload: FacePickupRequest, db: Session = Depends(get_db),
                 device_key: str = Header("", alias="X-Face-Device-Key")):
+    """Verifies a recipient at the locker via single-look 1:N Face ID (or optional 1:1 / multi-angle)."""
     expected_key = os.getenv("FACE_DEVICE_KEY")
     if not expected_key or not hmac.compare_digest(device_key.encode(), expected_key.encode()):
         raise HTTPException(status_code=403, detail="Face pickup device is not authorized.")
-    user = db.get(User, payload.user_id)
-    if not user or not user.face_auth_enabled or not user.face_registered:
-        return OtpVerificationResponse(valid=False, message="Face ID is unavailable.")
+
+    # 1. Extract probe vector(s) from either single image (1-look) or legacy multi-angle dict
     try:
-        model_id, probes = extract_templates(payload.angles)
-        from edge.cv.face_verify import VERIFY_SCORE, unit
-        enrolled = json.loads(user.face_data_json or "{}")
-        matched = all(
-            enrolled[pose]["model_id"] == model_id
-            and float(unit(enrolled[pose]["embedding"]) @ vector) >= VERIFY_SCORE
-            for pose, vector in probes.items()
-        )
-    except (KeyError, TypeError, ValueError):
-        matched = False
+        if payload.image:
+            model_id, single_vec = extract_probe_vector(payload.image)
+            probe_vectors = [single_vec]
+        elif payload.angles:
+            model_id, probes_map = extract_templates(payload.angles)
+            probe_vectors = list(probes_map.values())
+        else:
+            return OtpVerificationResponse(valid=False, message="Thiếu dữ liệu ảnh khuôn mặt.")
+    except ValueError as exc:
+        logger.warning("Face pickup extraction failed: %s", exc)
+        return OtpVerificationResponse(valid=False, message=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if not matched:
-        return OtpVerificationResponse(valid=False, message="Five-angle verification failed.")
-    orders = db.query(Order).filter(
-        Order.user_id == user.id, Order.status == OrderStatus.STORED, Order.locker_id.isnot(None),
-    ).order_by(Order.id).all()
-    for order in orders:
-        if order.locker and not db.query(Order).filter(
-            Order.locker_id == order.locker_id, Order.status == OrderStatus.STORED,
-            Order.user_id != user.id,
-        ).first():
-            return collect_orders(order, orders, db, verified_message="Face ID confirmed")
-    return OtpVerificationResponse(valid=False, message="No eligible parcel for Face ID pickup.")
+
+    # 2. Query candidate users with Face ID enabled & registered
+    query = db.query(User).filter(User.face_auth_enabled == 1, User.face_registered == 1)
+    if payload.user_id is not None:
+        query = query.filter(User.id == payload.user_id)
+    candidates = query.all()
+    if not candidates:
+        return OtpVerificationResponse(valid=False, message="Chưa có tài khoản nào kích hoạt Face ID.")
+
+    # 3. 1:N matching across enrolled multi-angle galleries
+    scored_matches = []
+    best_overall_score = -1.0
+    best_overall_user = None
+    for user in candidates:
+        try:
+            enrolled = json.loads(user.face_data_json or "{}")
+            score = score_against_enrolled(enrolled, model_id, probe_vectors)
+        except (TypeError, ValueError):
+            continue
+        if score > best_overall_score:
+            best_overall_score = score
+            best_overall_user = user
+        if score >= PICKUP_FACE_MATCH_THRESHOLD:
+            scored_matches.append((score, user))
+
+    if not scored_matches:
+        logger.info(
+            "Face ID 1:N no match (best_user=%s, best_score=%.3f < %.2f)",
+            best_overall_user.id if best_overall_user else None,
+            best_overall_score,
+            PICKUP_FACE_MATCH_THRESHOLD,
+        )
+        return OtpVerificationResponse(valid=False, message="Không nhận diện được khuôn mặt phù hợp.")
+
+    scored_matches.sort(key=lambda item: item[0], reverse=True)
+
+    # 4. Unlock the locker for the highest-scoring matched user who has an eligible STORED parcel
+    for score, matched_user in scored_matches:
+        orders = db.query(Order).filter(
+            Order.user_id == matched_user.id,
+            Order.status == OrderStatus.STORED,
+            Order.locker_id.isnot(None),
+        ).order_by(Order.id).all()
+        for order in orders:
+            if order.locker and not db.query(Order).filter(
+                Order.locker_id == order.locker_id,
+                Order.status == OrderStatus.STORED,
+                Order.user_id != matched_user.id,
+            ).first():
+                logger.info(
+                    "Face ID 1:N matched User #%d (%s) with score=%.3f -> Locker #%d",
+                    matched_user.id,
+                    matched_user.full_name,
+                    score,
+                    order.locker.locker_number,
+                )
+                return collect_orders(
+                    order,
+                    orders,
+                    db,
+                    verified_message=f"Face ID ({matched_user.full_name})",
+                )
+
+    top_user = scored_matches[0][1]
+    logger.info("Face ID matched User #%d (%s) but no STORED parcel found.", top_user.id, top_user.full_name)
+    return OtpVerificationResponse(
+        valid=False,
+        message=f"Xin chào {top_user.full_name}, hiện không có kiện hàng nào trong tủ.",
+    )
 
 
 def collect_orders(order, matched_orders, db, verified_message="Mã chính xác"):

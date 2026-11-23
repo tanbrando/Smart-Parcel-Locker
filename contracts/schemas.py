@@ -351,6 +351,16 @@ class FaceEnrollMultiAngleRequest(BaseModel):
     )
 
 
+class FacePickupRequest(BaseModel):
+    """Single-look 1:N (or optional 1:1 / multi-angle) facial pickup payload from Edge Pi."""
+    user_id: Optional[int] = Field(None, description="Optional claimed user_id; omit for automatic 1:N matching")
+    image: Optional[str] = Field(None, description="Single JPEG data URL captured at the locker camera")
+    angles: Optional[Dict[str, str]] = Field(
+        None,
+        description="Optional multi-angle mapping for backward compatibility",
+    )
+
+
 class FaceCheckAngleRequest(BaseModel):
     """Single-frame pose validation payload sent from Web HUD during guided capture."""
     pose: str = Field(..., description="Target pose: front, left, right, up, or down")
