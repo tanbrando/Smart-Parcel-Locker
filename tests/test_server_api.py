@@ -604,6 +604,34 @@ def test_hcsr04_distance_deposit_and_4_lockers_schema(db_session):
     assert locker_obj.current_distance_cm == 35.0
 
 
+def test_face_check_angle_endpoint(monkeypatch):
+    """Verifies real-time single-angle Face ID validation endpoint returns HUD nose coords & Vietnamese hint."""
+    from contracts.schemas import FaceCheckAngleRequest
+    from server.routers import auth
+
+    def fake_inspect(pose, image, neutral_pitch=None):
+        return {
+            "valid": True,
+            "pose": pose,
+            "detected_pose": pose,
+            "neutral_pitch": 0.42 if pose == "front" else neutral_pitch,
+            "nose_x": 198.5,
+            "nose_y": 154.0,
+            "message": "Đã khớp góc Nhìn thẳng!",
+        }
+
+    monkeypatch.setattr(auth, "inspect_single_angle", fake_inspect)
+    res = auth.check_face_angle(
+        FaceCheckAngleRequest(pose="front", image="data:image/jpeg;base64,/9j/4AAQ", neutral_pitch=None)
+    )
+    assert res.valid is True
+    assert res.pose == "front"
+    assert res.neutral_pitch == 0.42
+    assert res.nose_x == 198.5
+    assert "Nhìn thẳng" in res.message
+
+
+
 
 
 

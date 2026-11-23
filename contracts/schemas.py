@@ -351,6 +351,24 @@ class FaceEnrollMultiAngleRequest(BaseModel):
     )
 
 
+class FaceCheckAngleRequest(BaseModel):
+    """Single-frame pose validation payload sent from Web HUD during guided capture."""
+    pose: str = Field(..., description="Target pose: front, left, right, up, or down")
+    image: str = Field(..., description="JPEG data URL from camera frame")
+    neutral_pitch: Optional[float] = Field(None, description="Neutral pitch captured from the front pose")
+
+
+class FaceCheckAngleResponse(BaseModel):
+    """Real-time YuNet pose validation & mirrored nose HUD coordinates."""
+    valid: bool
+    pose: str
+    detected_pose: Optional[str] = None
+    neutral_pitch: Optional[float] = None
+    nose_x: Optional[float] = None
+    nose_y: Optional[float] = None
+    message: str
+
+
 class FaceEnrollResponse(BaseModel):
     """Status response after enrolling or toggling facial authentication."""
     success: bool

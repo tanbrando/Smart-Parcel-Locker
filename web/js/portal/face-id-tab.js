@@ -26,10 +26,15 @@ window.PortalFaceIdTab = (() => {
   let currentUser = null;
   let activeAngleIndex = 0;
   let capturedAngles = {};
+  let frontNeutralPitch = null;
   let mediaStream = null;
   let analyzerTimer = null;
+  let poseCheckTimer = null;
+  let poseCheckInFlight = false;
+  let nextAllowedCaptureAt = 0;
+  let lastServerHint = "";
+  let modelMissingWarned = false;
   let prevSampleData = null;
-  let stableAlignedTicks = 0;
   let autoCapture = true;
   let starting = false;
   let liveFaceDot = { x: 200, y: 155, aligned: false };
@@ -80,9 +85,13 @@ window.PortalFaceIdTab = (() => {
 
     const angle = ANGLES[activeAngleIndex] || ANGLES[0];
     if (promptEl) {
-      promptEl.innerHTML = isComplete()
-        ?`${icon("circle-check")} Đủ 5 góc`
-        : `${icon(angle.faIcon)} ${angle.label}`;
+      if (isComplete()) {
+        promptEl.innerHTML = `${icon("circle-check")} Đủ 5 góc — Bấm Lưu`;
+      } else if (lastServerHint && mediaStream) {
+        promptEl.innerHTML = `${icon(angle.faIcon)} ${lastServerHint}`;
+      } else {
+        promptEl.innerHTML = `${icon(angle.faIcon)} ${angle.label}`;
+      }
     }
     if (saveBtn) saveBtn.hidden = !isComplete();
 
@@ -101,7 +110,8 @@ window.PortalFaceIdTab = (() => {
     grid.querySelectorAll("[data-angle-idx]").forEach((btn) => {
       btn.addEventListener("click", () => {
         activeAngleIndex = parseInt(btn.getAttribute("data-angle-idx"), 10);
-        stableAlignedTicks = 0;
+        lastServerHint = "";
+        liveFaceDot.aligned = false;
         renderAngleSteps();
       });
     });
@@ -205,28 +215,105 @@ window.PortalFaceIdTab = (() => {
     liveFaceDot.y = Math.round(liveFaceDot.y * 0.45 + cy * 0.55);
 
     const lightOk = avgLuma >= 55 && avgLuma <= 225;
-    const frameOk = Math.abs(liveFaceDot.x - 200) < 62 && Math.abs(liveFaceDot.y - 150) < 58;
     const stableOk = avgMotion < 12.5;
-    const allGood = lightOk && frameOk && stableOk;
-    liveFaceDot.aligned = allGood;
 
     setTelemetry("telLight", lightOk, avgLuma < 55 ? "Thiếu sáng" : avgLuma > 225 ? "Quá chói" : "Ánh sáng tốt");
-    setTelemetry("telFrame", frameOk, frameOk ? "Khớp khung" : "Đưa mặt vào giữa");
+    setTelemetry("telFrame", liveFaceDot.aligned, liveFaceDot.aligned ? "Khớp góc YuNet" : "Căn mũi vào vòng tròn");
     setTelemetry("telStable", stableOk, stableOk ? "Ổn định" : "Giữ yên đầu");
 
-    renderHudOverlay(allGood);
+    renderHudOverlay(liveFaceDot.aligned);
+  }
 
-    if (autoCapture && allGood && !isComplete()) {
-      stableAlignedTicks++;
-      showCountdown(Math.max(1, 4 - Math.ceil(stableAlignedTicks / 2)));
-      if (stableAlignedTicks >= 7) {
-        stableAlignedTicks = 0;
-        showCountdown(null);
-        captureFromVideo();
+  function grabVideoDataUrl() {
+    const video = $("faceCameraVideo");
+    const canvas = $("faceCaptureCanvas");
+    if (!canvas || !video || !mediaStream || video.videoWidth === 0) return null;
+    canvas.width = CAPTURE_W;
+    canvas.height = CAPTURE_H;
+    const ctx = canvas.getContext("2d");
+    drawCover(ctx, video, video.videoWidth, video.videoHeight);
+    return canvas.toDataURL("image/jpeg", 0.8);
+  }
+
+  async function validateAngleWithServer(poseKey, dataUrl, isManual = false) {
+    const res = await window.SmartApi.post("/auth/face/check-angle", {
+      pose: poseKey,
+      image: dataUrl,
+      neutral_pitch: poseKey === "front" ? null : frontNeutralPitch,
+    });
+
+    if (typeof res.nose_x === "number" && typeof res.nose_y === "number") {
+      liveFaceDot.x = Math.round(res.nose_x);
+      liveFaceDot.y = Math.round(res.nose_y);
+    }
+    liveFaceDot.aligned = Boolean(res.valid);
+    lastServerHint = res.message || "";
+
+    if (res.valid) {
+      if (poseKey === "front" && typeof res.neutral_pitch === "number") {
+        frontNeutralPitch = res.neutral_pitch;
       }
-    } else {
-      stableAlignedTicks = 0;
-      showCountdown(null);
+      storeCapture(dataUrl);
+      toast(res.message || `Đã chụp xong góc ${poseKey}!`, "success", 1800);
+      nextAllowedCaptureAt = Date.now() + 900;
+      return true;
+    }
+
+    if (isManual) {
+      toast(res.message || "Tư thế chưa khớp góc yêu cầu, hãy thử lại.", "error", 3500);
+    }
+    renderAngleSteps();
+    return false;
+  }
+
+  async function pollServerPoseCheck() {
+    if (!mediaStream || poseCheckInFlight || isComplete()) return;
+    if (Date.now() < nextAllowedCaptureAt) return;
+    const angle = ANGLES[activeAngleIndex];
+    if (!angle) return;
+    // Require 'front' first so neutral_pitch is calibrated before up/down
+    if (angle.key !== "front" && frontNeutralPitch === null && !capturedAngles.front) {
+      activeAngleIndex = 0;
+      renderAngleSteps();
+      return;
+    }
+
+    const dataUrl = grabVideoDataUrl();
+    if (!dataUrl) return;
+
+    poseCheckInFlight = true;
+    try {
+      const res = await window.SmartApi.post("/auth/face/check-angle", {
+        pose: angle.key,
+        image: dataUrl,
+        neutral_pitch: angle.key === "front" ? null : frontNeutralPitch,
+      });
+
+      if (typeof res.nose_x === "number" && typeof res.nose_y === "number") {
+        liveFaceDot.x = Math.round(res.nose_x);
+        liveFaceDot.y = Math.round(res.nose_y);
+      }
+      liveFaceDot.aligned = Boolean(res.valid);
+      lastServerHint = res.message || "";
+      setTelemetry("telFrame", liveFaceDot.aligned, res.message || "Căn mũi vào vòng tròn");
+
+      if (res.valid && autoCapture) {
+        if (angle.key === "front" && typeof res.neutral_pitch === "number") {
+          frontNeutralPitch = res.neutral_pitch;
+        }
+        storeCapture(dataUrl);
+        toast(res.message || `Đã chụp xong góc ${angle.label}!`, "success", 1800);
+        nextAllowedCaptureAt = Date.now() + 1000;
+      } else {
+        renderAngleSteps();
+      }
+    } catch (err) {
+      if (err && err.status === 503 && !modelMissingWarned) {
+        modelMissingWarned = true;
+        toast(err.message || "Chưa có model YuNet/SFace trên Server (chạy ./setup.sh).", "error", 6000);
+      }
+    } finally {
+      poseCheckInFlight = false;
     }
   }
 
@@ -317,10 +404,13 @@ window.PortalFaceIdTab = (() => {
       await video.play().catch(() => {});
 
       prevSampleData = null;
-      stableAlignedTicks = 0;
+      lastServerHint = "";
+      nextAllowedCaptureAt = Date.now() + 600;
       setLive(true);
       if (analyzerTimer) clearInterval(analyzerTimer);
+      if (poseCheckTimer) clearInterval(poseCheckTimer);
       analyzerTimer = setInterval(analyzeVideoFrame, 180);
+      poseCheckTimer = setInterval(pollServerPoseCheck, 650);
       renderAngleSteps();
     } catch (err) {
       stopCamera();
@@ -335,6 +425,11 @@ window.PortalFaceIdTab = (() => {
       clearInterval(analyzerTimer);
       analyzerTimer = null;
     }
+    if (poseCheckTimer) {
+      clearInterval(poseCheckTimer);
+      poseCheckTimer = null;
+    }
+    poseCheckInFlight = false;
     if (mediaStream) {
       mediaStream.getTracks().forEach((t) => t.stop());
       mediaStream = null;
@@ -342,7 +437,7 @@ window.PortalFaceIdTab = (() => {
     const video = $("faceCameraVideo");
     if (video) video.srcObject = null;
     liveFaceDot.aligned = false;
-    stableAlignedTicks = 0;
+    lastServerHint = "";
     showCountdown(null);
     setLive(false);
     renderHudOverlay(false);
@@ -357,20 +452,25 @@ window.PortalFaceIdTab = (() => {
 
     const nextMissing = ANGLES.findIndex((a) => !capturedAngles[a.key]);
     if (nextMissing !== -1) activeAngleIndex = nextMissing;
-    stableAlignedTicks = 0;
+    lastServerHint = "";
+    liveFaceDot.aligned = false;
     renderAngleSteps();
   }
 
-  function captureFromVideo() {
-    const video = $("faceCameraVideo");
-    const canvas = $("faceCaptureCanvas");
-    if (!canvas || !video || !mediaStream || video.videoWidth === 0) return;
+  async function captureFromVideo() {
+    const dataUrl = grabVideoDataUrl();
+    if (!dataUrl || poseCheckInFlight) return;
+    const angle = ANGLES[activeAngleIndex];
+    if (!angle) return;
 
-    canvas.width = CAPTURE_W;
-    canvas.height = CAPTURE_H;
-    const ctx = canvas.getContext("2d");
-    drawCover(ctx, video, video.videoWidth, video.videoHeight);
-    storeCapture(canvas.toDataURL("image/jpeg", 0.68));
+    poseCheckInFlight = true;
+    try {
+      await validateAngleWithServer(angle.key, dataUrl, true);
+    } catch (err) {
+      toast(err.message || "Không thể kiểm tra góc khuôn mặt.", "error", 4000);
+    } finally {
+      poseCheckInFlight = false;
+    }
   }
 
   // Center-crop source into the 4:3 capture canvas (like object-fit: cover)
@@ -400,12 +500,18 @@ window.PortalFaceIdTab = (() => {
 
     const url = URL.createObjectURL(input.files[0]);
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       canvas.width = CAPTURE_W;
       canvas.height = CAPTURE_H;
       drawCover(canvas.getContext("2d"), img, img.naturalWidth, img.naturalHeight);
       URL.revokeObjectURL(url);
-      storeCapture(canvas.toDataURL("image/jpeg", 0.68));
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+      const angle = ANGLES[activeAngleIndex];
+      try {
+        await validateAngleWithServer(angle.key, dataUrl, true);
+      } catch (err) {
+        toast(err.message || "Không thể kiểm tra ảnh vừa chụp.", "error", 4000);
+      }
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -428,7 +534,6 @@ window.PortalFaceIdTab = (() => {
       btn.title = `Tự động chụp: ${autoCapture ? "bật" : "tắt"}`;
     }
     if (!autoCapture) {
-      stableAlignedTicks = 0;
       showCountdown(null);
     }
   }
@@ -508,8 +613,10 @@ window.PortalFaceIdTab = (() => {
     on("faceSaveEnrollBtn", "click", saveEnrollment);
     on("faceResetAnglesBtn", "click", () => {
       capturedAngles = {};
+      frontNeutralPitch = null;
       activeAngleIndex = 0;
-      stableAlignedTicks = 0;
+      lastServerHint = "";
+      liveFaceDot.aligned = false;
       renderAngleSteps();
     });
 

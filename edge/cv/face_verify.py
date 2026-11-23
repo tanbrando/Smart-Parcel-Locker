@@ -25,7 +25,7 @@ PREVIEW_TITLE = "Smart Parcel Locker - Face Verification"
 PITCH_UP_MIN = 0.04
 PITCH_DOWN_MIN = 0.03
 PITCH_FRONT_MARGIN = 0.008
-PITCH_MAX = 0.22
+PITCH_MAX = 0.30
 
 
 def show_preview(frame, prompt, progress, status):
@@ -79,20 +79,20 @@ def pose_geometry(landmarks):
 
 def classify_pose(yaw, pitch, neutral_pitch):
     delta = 0 if neutral_pitch is None else pitch - neutral_pitch
-    if abs(yaw) <= 0.18:
+    if abs(yaw) <= 0.22:
         if -PITCH_MAX <= delta <= -PITCH_UP_MIN:
             return "up"
         if PITCH_DOWN_MIN <= delta <= PITCH_MAX:
             return "down"
-    if abs(delta) > 0.10:
+    if abs(delta) > 0.12:
         return None
-    if abs(yaw) <= 0.12 and (
+    if abs(yaw) <= 0.14 and (
         -PITCH_UP_MIN + PITCH_FRONT_MARGIN <= delta <= PITCH_DOWN_MIN - PITCH_FRONT_MARGIN
     ):
         return "front"
-    if 0.20 <= yaw <= 0.60:
+    if 0.18 <= yaw <= 0.65:
         return "left"
-    if -0.60 <= yaw <= -0.20:
+    if -0.65 <= yaw <= -0.18:
         return "right"
     return None
 
@@ -126,7 +126,7 @@ class FaceCamera:
         yaw, pitch = geometry
         pose = classify_pose(yaw, pitch, neutral_pitch)
         if required_pose in ("up", "down") and pose != required_pose and neutral_pitch is not None:
-            if abs(yaw) > 0.18:
+            if abs(yaw) > 0.22:
                 return None, "Face the camera without turning sideways"
             movement = pitch - neutral_pitch if required_pose == "down" else neutral_pitch - pitch
             if movement > PITCH_MAX:

@@ -14,6 +14,8 @@ from contracts.schemas import (
     UserRole,
     FaceToggleRequest,
     FaceEnrollMultiAngleRequest,
+    FaceCheckAngleRequest,
+    FaceCheckAngleResponse,
     FaceEnrollResponse,
 )
 from server.core.security import (
@@ -23,7 +25,7 @@ from server.core.security import (
 )
 from server.db.session import get_db
 from server.db.models import User, AccessLog
-from server.services.face import extract_templates
+from server.services.face import extract_templates, inspect_single_angle
 
 router = APIRouter(prefix="/auth", tags=["Authentication & Face ID"])
 
@@ -142,6 +144,22 @@ def toggle_face_auth(payload: FaceToggleRequest, db: Session = Depends(get_db),
         enrolled_angles=user.face_angles_enrolled,
         message="Đã bật xác thực khuôn mặt." if payload.enabled else "Đã tắt xác thực khuôn mặt.",
     )
+
+
+@router.post("/face/check-angle", response_model=FaceCheckAngleResponse)
+def check_face_angle(payload: FaceCheckAngleRequest):
+    """Validates a single camera frame with YuNet during guided 5-angle Web enrollment."""
+    try:
+        result = inspect_single_angle(
+            pose=payload.pose,
+            image=payload.image,
+            neutral_pitch=payload.neutral_pitch,
+        )
+        return FaceCheckAngleResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/face/enroll", response_model=FaceEnrollResponse)
