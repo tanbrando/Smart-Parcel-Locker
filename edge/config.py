@@ -36,6 +36,7 @@ SCAN_TIMEOUT_SECONDS: float = 12.0
 DEFAULT_CAMERA_MODE: str = "test" if MOCK_HARDWARE else "raspberry"
 CAMERA_MODE: str = os.getenv("CAMERA_MODE", DEFAULT_CAMERA_MODE).lower()
 USE_CSI_CAMERA: bool = os.getenv("USE_CSI_CAMERA", "true").lower() in ("true", "1", "yes")
+CAMERA_PREVIEW: bool = os.getenv("CAMERA_PREVIEW", "false").lower() in ("true", "1", "yes")
 
 # Default test image paths
 EDGE_DIR: str = os.path.dirname(os.path.abspath(__file__))

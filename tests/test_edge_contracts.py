@@ -293,6 +293,26 @@ def test_custom_keypad_matrix_layout():
     assert "#" in flat
 
 
+def test_camera_preview_flag_and_headless_fallback():
+    from unittest.mock import patch
+    from edge.cv import scanner as scanner_mod
+    from edge.core import face_pickup
+
+    with patch.dict("os.environ", {"CAMERA_PREVIEW": "true"}):
+        sc = PackageScanner(mock_mode=True)
+        assert sc.show_preview is True
+
+    with patch.dict("os.environ", {"CAMERA_PREVIEW": "false"}):
+        sc_off = PackageScanner(mock_mode=True)
+        assert sc_off.show_preview is False
+        assert face_pickup._preview_enabled() is False
+
+    # When OpenCV has no UI backend (headless), _can_show_gui returns False safely
+    with patch.object(scanner_mod.cv2, "currentUIFramework", return_value="", create=True):
+        assert scanner_mod._can_show_gui() is False
+
+
+
 if __name__ == "__main__":
     test_functions = [
         test_tracking_regex_parsers,

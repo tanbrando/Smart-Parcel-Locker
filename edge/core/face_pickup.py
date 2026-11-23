@@ -7,8 +7,23 @@ from pathlib import Path
 import requests
 
 from contracts.schemas import OtpVerificationResponse
-from edge.config import CAMERA_INDEX, USE_CSI_CAMERA
+from edge.config import CAMERA_INDEX, CAMERA_PREVIEW, USE_CSI_CAMERA
 from edge.cv.face_verify import FaceCamera, PiCapture, POSE_PROMPTS, cv2
+
+
+def _preview_enabled() -> bool:
+    want = os.getenv("CAMERA_PREVIEW", str(CAMERA_PREVIEW)).lower() in ("true", "1", "yes")
+    if not want:
+        return False
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        return False
+    try:
+        ui_fw = getattr(cv2, "currentUIFramework", None)
+        if callable(ui_fw) and not ui_fw():
+            return False
+    except Exception:
+        return False
+    return True
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -35,9 +50,12 @@ def verify_pickup(api, user_id, indicators):
     if not yunet_path.is_file() or not sface_path.is_file():
         raise RuntimeError("Face ONNX models missing. Run ./setup.sh to download YuNet & SFace.")
     model = FaceCamera(yunet_path, sface_path)
+    use_preview = _preview_enabled()
     photos = {}
     neutral_pitch = None
     with ExitStack() as stack:
+        if use_preview:
+            stack.callback(cv2.destroyAllWindows)
         if USE_CSI_CAMERA:
             from picamera2 import Picamera2
 
@@ -56,7 +74,7 @@ def verify_pickup(api, user_id, indicators):
             indicators.display_message(f"Face ID {index}/5", prompts[pose])
             accepted = []
             _, _, pitch = model.capture(
-                camera, pose, neutral_pitch=neutral_pitch, frame_count=1,
+                camera, pose, preview=use_preview, neutral_pitch=neutral_pitch, frame_count=1,
                 on_capture=accepted.append,
             )
             if pose == "front":

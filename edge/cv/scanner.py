@@ -18,6 +18,7 @@ from edge.config import (
     CAMERA_FRAME_WIDTH,
     CAMERA_FRAME_HEIGHT,
     CAMERA_MODE,
+    CAMERA_PREVIEW,
     USE_CSI_CAMERA,
     DEFAULT_TEST_CAMERA_IMAGE,
     MOCK_HARDWARE,
@@ -57,6 +58,24 @@ def build_gstreamer_csi_pipeline(
     )
 
 
+PREVIEW_WINDOW_TITLE = "Smart Parcel Locker - Waybill Scanner"
+
+
+def _can_show_gui() -> bool:
+    """Checks whether OpenCV GUI windows (cv2.imshow) can be opened in this session."""
+    if not OPENCV_AVAILABLE:
+        return False
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        return False
+    try:
+        ui_fw = getattr(cv2, "currentUIFramework", None)
+        if callable(ui_fw) and not ui_fw():
+            return False
+    except Exception:
+        return False
+    return True
+
+
 class PackageScanner:
     """
     Captures parcel label image (from test image in 'test' mode or Raspberry Pi CSI/USB camera in 'raspberry' mode),
@@ -70,6 +89,7 @@ class PackageScanner:
         mode: Optional[str] = None,
         test_image_path: str = DEFAULT_TEST_CAMERA_IMAGE,
         use_csi: bool = USE_CSI_CAMERA,
+        show_preview: Optional[bool] = None,
     ):
         self.camera_index = camera_index
         self.mock_mode = mock_mode or not OPENCV_AVAILABLE
@@ -80,14 +100,19 @@ class PackageScanner:
             self.mode = "test" if self.mock_mode else CAMERA_MODE
         self.test_image_path = test_image_path
         self.use_csi = use_csi
+        if show_preview is None:
+            self.show_preview = os.getenv("CAMERA_PREVIEW", str(CAMERA_PREVIEW)).lower() in ("true", "1", "yes")
+        else:
+            self.show_preview = bool(show_preview)
         self._cap = None
         self._picam2 = None
 
         logger.info(
-            "PackageScanner initialized (mode=%s, mock_mode=%s, camera_index=%d)",
+            "PackageScanner initialized (mode=%s, mock_mode=%s, camera_index=%d, preview=%s)",
             self.mode,
             self.mock_mode,
             self.camera_index,
+            self.show_preview,
         )
 
     def _open_camera(self):
@@ -238,6 +263,49 @@ class PackageScanner:
 
         return self.decode_waybill_frame(frame, run_ocr_for_weight=True)
 
+    def _show_scanner_preview(
+        self,
+        frame: np.ndarray,
+        remaining_sec: float,
+        status_text: str = "Align barcode / QR inside box",
+        highlight_color=(71, 255, 242),
+    ) -> bool:
+        """
+        Displays a lightweight 640x360 preview window (optimized for MobaXterm X11 forwarding).
+        Returns False if user pressed ESC/Q or closed the window.
+        """
+        preview = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_AREA)
+        h, w = preview.shape[:2]
+        # Top status banner
+        cv2.rectangle(preview, (0, 0), (w, 56), (22, 22, 20), -1)
+        cv2.putText(
+            preview,
+            f"Waybill Scanner  |  {max(0.0, remaining_sec):.1f}s  |  Q/ESC: Cancel",
+            (12, 22),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            preview,
+            status_text[:60],
+            (12, 46),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            highlight_color,
+            1,
+            cv2.LINE_AA,
+        )
+        # Target alignment box
+        cv2.rectangle(preview, (w // 6, h // 4), (w * 5 // 6, h * 4 // 5), highlight_color, 2)
+        cv2.imshow(PREVIEW_WINDOW_TITLE, preview)
+        key = cv2.waitKey(1) & 0xFF
+        if key in (27, ord("q"), ord("Q")):
+            return False
+        return True
+
     def scan_package_label(
         self,
         timeout: float = SCAN_TIMEOUT_SECONDS,
@@ -264,6 +332,10 @@ class PackageScanner:
                 return self.scan_from_image(self.test_image_path)
             return MOCK_SCAN_VALID_SPX
 
+        preview_active = self.show_preview and _can_show_gui()
+        if self.show_preview and not preview_active:
+            logger.warning("CAMERA_PREVIEW=true requested, but no GUI/DISPLAY available. Running headless.")
+
         deadline = time.monotonic() + timeout
         last_frame = None
         try:
@@ -279,11 +351,37 @@ class PackageScanner:
                 if decoded_objects:
                     result = self._decode_waybill(frame, True, decoded_objects)
                     if result.tracking_number:
+                        if preview_active:
+                            try:
+                                self._show_scanner_preview(
+                                    frame,
+                                    deadline - time.monotonic(),
+                                    status_text=f"MATCHED: {result.tracking_number}",
+                                    highlight_color=(80, 230, 120),
+                                )
+                                time.sleep(0.4)
+                            except cv2.error:
+                                preview_active = False
                         return result
+
+                if preview_active:
+                    try:
+                        keep_going = self._show_scanner_preview(frame, deadline - time.monotonic())
+                        if not keep_going:
+                            logger.info("Waybill scan cancelled from preview window.")
+                            break
+                    except cv2.error as exc:
+                        logger.warning("Disabling camera preview due to OpenCV GUI error: %s", exc)
+                        preview_active = False
 
                 time.sleep(0.05)
         finally:
             self._release_camera()
+            if preview_active:
+                try:
+                    cv2.destroyAllWindows()
+                except Exception:
+                    pass
 
         # One recovery pass after capture: scaled barcode decode and text OCR.
         if last_frame is not None:
