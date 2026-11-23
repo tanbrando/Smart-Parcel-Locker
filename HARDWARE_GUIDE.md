@@ -127,14 +127,14 @@ export PYTHONPATH="."
 
 5. **Kiểm tra & Calibrate 4 cảm biến siêu âm HC-SR04**:
    ```bash
-   python -c "
-   from edge.hardware.ultrasonic_sensor import UltrasonicSensor
-   us = UltrasonicSensor(mock_mode=False)
-   for k in (1, 2, 3, 4):
-       d = us.measure_distance_cm(locker_id=k, samples=5)
-       occ = us.is_locker_occupied(locker_id=k)
-       print(f'Locker #{k}: distance={d} cm | occupied={occ.occupied} | baseline={occ.baseline_cm} cm')
-   "
+   # Giám sát trực tiếp 4 cảm biến (hiển thị cm, % lấp đầy, Có hàng/Trống/Timeout)
+   python scripts/test_ultrasonic.py
+
+   # Chỉ test riêng 1 vài ngăn (VD: ngăn 1 & 2) hoặc đo 1 lượt
+   python scripts/test_ultrasonic.py --lockers 1,2 --once
+
+   # Hiệu chuẩn chiều cao tủ rỗng thực tế (20 mẫu/ngăn -> gợi ý BASELINE_EMPTY_CM)
+   python scripts/test_ultrasonic.py --calibrate
    ```
    - Khi tủ rỗng, khoảng cách chuẩn mặc định là `BASELINE_EMPTY_CM=35.0` (chỉnh trong `edge/.env` theo chiều cao thực tế của tủ).
    - Khi có bưu kiện (`distance < baseline - OCCUPIED_MARGIN_CM`, mặc định `< 30.0 cm`), hệ thống xác nhận có hàng và khóa Servo.
