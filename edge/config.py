@@ -67,6 +67,8 @@ LOCKER_RELAY_PINS = LOCKER_SERVO_PINS
 SERVO_PWM_FREQUENCY: int = 50           # Standard 50Hz for RC servos (20ms period)
 SERVO_LOCKED_ANGLE: float = 0.0         # Angle when door is locked (0 degrees)
 SERVO_UNLOCKED_ANGLE: float = 90.0      # Angle when door is open (90 degrees)
+SERVO_STEP_DEG: float = float(os.getenv("SERVO_STEP_DEG", "2.0"))           # Smooth ramp step (degrees per tick)
+SERVO_STEP_DELAY_SEC: float = float(os.getenv("SERVO_STEP_DELAY_SEC", "0.025"))  # Delay per step (increase to slow door)
 DOOR_UNLOCK_DURATION_SEC: float = 4.0   # Duration to keep unlocked before returning to locked
 
 # Partial-hardware testing switches (useful before wiring all 4 compartments / sensors)

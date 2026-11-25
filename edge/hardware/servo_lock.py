@@ -17,6 +17,8 @@ from edge.config import (
     SERVO_PWM_FREQUENCY,
     SERVO_LOCKED_ANGLE,
     SERVO_UNLOCKED_ANGLE,
+    SERVO_STEP_DEG,
+    SERVO_STEP_DELAY_SEC,
     ENABLE_DOOR_SWITCH,
     DOOR_SWITCH_PINS,
     DOOR_SWITCH_CLOSED_ACTIVE_LOW,
@@ -150,22 +152,42 @@ class ServoLockController:
             return True
         return self.is_door_closed(locker_id)
 
-    def _rotate_servo(self, locker_id: int, angle: float, settle_time: float = 0.4):
-        """Rotates servo to target angle and detaches PWM pulse to prevent jitter."""
+    def _rotate_servo(
+        self,
+        locker_id: int,
+        angle: float,
+        settle_time: float = 0.25,
+        step_deg: float = SERVO_STEP_DEG,
+        step_delay: float = SERVO_STEP_DELAY_SEC,
+    ):
+        """Smoothly ramps servo from current angle to target angle, then detaches PWM to prevent jitter."""
         if locker_id not in self.servo_pins:
             logger.error("Invalid locker_id: %d", locker_id)
             return
 
-        self.current_angles[locker_id] = angle
+        start_angle = float(self.current_angles.get(locker_id, angle))
+        target_angle = max(0.0, min(180.0, float(angle)))
+        self.current_angles[locker_id] = target_angle
 
         if self.mock_mode:
-            logger.debug("[Mock Servo] Locker %d angle rotated to %.1f deg", locker_id, angle)
+            logger.debug("[Mock Servo] Locker %d angle rotated to %.1f deg", locker_id, target_angle)
             return
 
         pwm = self.pwm_instances.get(locker_id)
         if pwm is not None:
-            duty = angle_to_duty_cycle(angle)
-            pwm.ChangeDutyCycle(duty)
+            step = max(0.5, abs(float(step_deg)))
+            delay = max(0.0, float(step_delay))
+            if delay > 0 and abs(target_angle - start_angle) > step:
+                direction = 1.0 if target_angle > start_angle else -1.0
+                cur = start_angle
+                while (direction > 0 and cur < target_angle) or (direction < 0 and cur > target_angle):
+                    cur += direction * step
+                    if (direction > 0 and cur > target_angle) or (direction < 0 and cur < target_angle):
+                        cur = target_angle
+                    pwm.ChangeDutyCycle(angle_to_duty_cycle(cur))
+                    time.sleep(delay)
+            else:
+                pwm.ChangeDutyCycle(angle_to_duty_cycle(target_angle))
             time.sleep(settle_time)
             # Detach PWM to avoid jitter
             pwm.ChangeDutyCycle(0)
