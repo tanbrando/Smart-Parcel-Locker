@@ -79,18 +79,34 @@ if [ "$USE_MOCK" = true ]; then
     export CAMERA_MODE=test
 fi
 
+# Bảo toàn XAUTHORITY khi chạy qua sudo để MobaXterm X11 không báo "No authorisation provided"
+if [ -n "${DISPLAY:-}" ] && [ -z "${XAUTHORITY:-}" ] && [ -n "${SUDO_USER:-}" ]; then
+    SUDO_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)"
+    if [ -n "$SUDO_HOME" ] && [ -f "$SUDO_HOME/.Xauthority" ]; then
+        export XAUTHORITY="$SUDO_HOME/.Xauthority"
+    fi
+fi
+
 if [ "$USE_DISPLAY" = true ]; then
     export CAMERA_PREVIEW=true
     if [ -z "${DISPLAY:-}" ]; then
         echo "⚠️ Đã bật --display nhưng chưa thấy biến DISPLAY (X11 Forwarding)."
         echo "👉 Trên MobaXterm: bật X server (góc trên phải) + tích 'X11-Forwarding' trong SSH Session."
         echo "👉 Trên Pi: sudo apt install -y xauth && đảm bảo 'X11Forwarding yes' trong /etc/ssh/sshd_config."
+        export CAMERA_PREVIEW=false
     fi
     HAS_CV_GUI="$(python -c "import cv2; print('1' if getattr(cv2, 'currentUIFramework', lambda: '')() else '0')" 2>/dev/null || echo '0')"
     if [ "$HAS_CV_GUI" = "0" ]; then
         echo "⚠️ OpenCV trong .venv hiện là bản headless (chưa hỗ trợ cv2.imshow)."
         echo "👉 Chạy 1 lần lệnh sau trên Pi để dùng python3-opencv có GUI của hệ thống:"
         echo "     pip uninstall -y opencv-python-headless"
+        export CAMERA_PREVIEW=false
+    elif [ "${CAMERA_PREVIEW:-false}" = "true" ]; then
+        if ! python -c "import cv2; cv2.namedWindow('__x11_test__'); cv2.destroyAllWindows()" >/dev/null 2>&1; then
+            echo "⚠️ Không kết nối được X11 Display (${DISPLAY:-none}) — tự động tắt preview để tránh crash Qt."
+            echo "👉 Nếu bạn chạy bằng sudo, hãy giữ XAUTHORITY hoặc chạy không cần sudo (user thuộc nhóm gpio,video,i2c)."
+            export CAMERA_PREVIEW=false
+        fi
     fi
 fi
 

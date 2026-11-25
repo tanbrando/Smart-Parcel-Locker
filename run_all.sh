@@ -113,6 +113,14 @@ if [ "$USE_MOCK" = true ]; then
     export CAMERA_MODE=test
 fi
 
+# Bảo toàn XAUTHORITY khi chạy qua sudo để MobaXterm X11 không báo "No authorisation provided"
+if [ -n "${DISPLAY:-}" ] && [ -z "${XAUTHORITY:-}" ] && [ -n "${SUDO_USER:-}" ]; then
+    SUDO_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)"
+    if [ -n "$SUDO_HOME" ] && [ -f "$SUDO_HOME/.Xauthority" ]; then
+        export XAUTHORITY="$SUDO_HOME/.Xauthority"
+    fi
+fi
+
 SERVER_PID=""
 CLEANUP_DONE=false
 
