@@ -108,3 +108,39 @@ class AccessLog(Base):
 
     locker = relationship("Locker", back_populates="logs")
     order = relationship("Order", back_populates="logs")
+
+
+class SoftwareRelease(Base):
+    __tablename__ = "software_releases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(String(40), unique=True, index=True, nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_path = Column(Text, nullable=False)
+    file_size = Column(BigInteger, default=0, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    signature = Column(String(128), nullable=False)
+    changelog = Column(Text, default="", nullable=False)
+    created_by = Column(String(100), default="Admin", nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    jobs = relationship("UpdateJob", back_populates="release")
+
+
+class UpdateJob(Base):
+    __tablename__ = "update_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    release_id = Column(Integer, ForeignKey("software_releases.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String(20), default="UPDATE", nullable=False)  # UPDATE | ROLLBACK
+    target_version = Column(String(40), nullable=False)
+    previous_version = Column(String(40), nullable=True)
+    status = Column(String(30), default="PENDING", nullable=False)
+    progress = Column(Integer, default=0, nullable=False)
+    message = Column(Text, default="Đang chờ OTA Agent trên Pi nhận lệnh...", nullable=False)
+    logs_json = Column(Text, default="[]", nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    release = relationship("SoftwareRelease", back_populates="jobs")

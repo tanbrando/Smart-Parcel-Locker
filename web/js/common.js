@@ -85,6 +85,7 @@ function renderSharedSidebar(activePage = "dashboard") {
         ${link("lockers", "/lockers", "vault", "Ngăn tủ", "Ngăn tủ")}
         ${link("users", "/users", "users", "Khách hàng", "Khách", `<span class="nav-badge" id="sideBadgeUsers"></span>`)}
         ${link("logs", "/logs", "clipboard-list", "Nhật ký", "Nhật ký", "", "desktop-only")}
+        ${link("ota", "/ota", "rotate-right", "Cập nhật OTA", "OTA", "", "desktop-only")}
         ${link("simulator", "/simulator", "terminal", "Giả lập", "Giả lập")}
         ${link("portal", "/portal", "mobile-screen", "Cổng người dùng", "", "", "desktop-only")}
         <a href="/docs" target="_blank" rel="noopener" class="nav-link desktop-only">

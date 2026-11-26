@@ -42,7 +42,8 @@ from server.core.config import settings
 from server.core.security import hash_password
 from server.db.session import engine, Base, SessionLocal
 from server.db.models import Locker, LockerStatus, User
-from server.routers import orders, edge, lockers, telegram, auth
+from server.routers import orders, edge, lockers, telegram, auth, ota
+from server.services.ota_service import get_current_app_version
 from server.services.telegram import start_telegram_polling_safe
 
 
@@ -186,8 +187,13 @@ app.add_middleware(
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Service liveness probe."""
-    return {"status": "ok", "app": settings.PROJECT_NAME, "env": settings.APP_ENV}
+    """Service liveness probe including current software version for OTA health checks."""
+    return {
+        "status": "ok",
+        "app": settings.PROJECT_NAME,
+        "env": settings.APP_ENV,
+        "version": get_current_app_version(),
+    }
 
 
 # Include Routers
@@ -196,6 +202,7 @@ app.include_router(orders.router, prefix=settings.API_V1_STR)
 app.include_router(edge.router, prefix=settings.API_V1_STR)
 app.include_router(lockers.router, prefix=settings.API_V1_STR)
 app.include_router(telegram.router, prefix=settings.API_V1_STR)
+app.include_router(ota.router, prefix=settings.API_V1_STR)
 
 
 # Mount static files for Web Dashboard (CSS, JS, Assets)
@@ -247,6 +254,12 @@ def serve_users():
 def serve_logs():
     """Serves the Access & Audit Logs Page."""
     return FileResponse(REPO_ROOT / "web" / "logs.html")
+
+
+@app.get("/ota", include_in_schema=False)
+def serve_ota():
+    """Serves the Admin OTA Software Update Page."""
+    return FileResponse(REPO_ROOT / "web" / "ota.html")
 
 
 @app.get("/simulator", include_in_schema=False)

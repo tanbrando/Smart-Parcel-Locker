@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SmartLocker - Cập nhật phần mềm OTA</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .ota-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .ota-version-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--primary, #2563eb);
+    }
+    .ota-progress-wrap {
+      margin-top: 12px;
+      background: rgba(148, 163, 184, 0.2);
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+    }
+    .ota-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2563eb, #10b981);
+      transition: width 0.35s ease;
+    }
+    .ota-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .ota-form-group label {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .ota-input {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: var(--bg-card, #fff);
+      color: var(--text-main, #0f172a);
+      font-size: 0.94rem;
+    }
+    .ota-status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .ota-status-SUCCESS { background: rgba(16, 185, 129, 0.16); color: #059669; }
+    .ota-status-FAILED { background: rgba(239, 68, 68, 0.16); color: #dc2626; }
+    .ota-status-ROLLED_BACK { background: rgba(245, 158, 11, 0.18); color: #d97706; }
+    .ota-status-PENDING,
+    .ota-status-DOWNLOADING,
+    .ota-status-VERIFYING,
+    .ota-status-INSTALLING,
+    .ota-status-RESTARTING,
+    .ota-status-HEALTH_CHECK { background: rgba(59, 130, 246, 0.16); color: #2563eb; }
+    .ota-btn {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+    .ota-btn-primary { background: #2563eb; color: #fff; }
+    .ota-btn-warning { background: #f59e0b; color: #fff; }
+    .ota-btn-danger { background: #ef4444; color: #fff; }
+    .ota-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .ota-msg {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="sidebarContainer"></div>
+
+    <main class="main-content">
+      <div class="top-bar">
+        <div class="page-title-block">
+          <h1>Cập nhật phần mềm OTA</h1>
+        </div>
+        <div class="top-bar-actions">
+          <button onclick="refreshOtaPage()" class="icon-btn" title="Làm mới" aria-label="Làm mới">
+            <span data-fa="rotate-right"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ota-grid">
+        <!-- Trạng thái thiết bị & Tiến trình cập nhật -->
+        <div class="bento-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0;">Trạng thái Raspberry Pi</h3>
+            <span class="ota-version-pill" id="otaCurrentVersion">v...</span>
+          </div>
+          <div style="font-size:0.9rem; color:var(--text-muted); margin-bottom:10px;">
+            Tổng số gói đã tải lên: <b id="otaTotalReleases">0</b>
+          </div>
+          <div id="otaActiveJobBox" style="padding:12px; border-radius:12px; background:rgba(148,163,184,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong id="otaJobTitle">Hệ thống đang ổn định</strong>
+              <span id="otaJobBadge" class="ota-status-badge ota-status-SUCCESS">IDLE</span>
+            </div>
+            <div id="otaJobMessage" style="font-size:0.86rem; color:var(--text-muted); margin-top:6px;">
+              Sẵn sàng nhận bản cập nhật mới.
+            </div>
+            <div class="ota-progress-wrap">
+              <div id="otaProgressBar" class="ota-progress-bar"></div>
+            </div>
+          </div>
+          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="otaQuickRollbackBtn" onclick="triggerRollback()" class="ota-btn ota-btn-warning">
+              Rollback bản trước
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload gói ZIP mới -->
+        <div class="bento-card">
+          <h3 style="margin-top:0; margin-bottom:12px;">Tải lên bản phát hành (.zip)</h3>
+          <form id="otaUploadForm">
+            <div class="ota-form-group">
+              <label for="otaVersionInput">Phiên bản (SemVer)</label>
+              <input id="otaVersionInput" class="ota-input" type="text" placeholder="Ví dụ: 1.1.0" required>
+            </div>
+            <div class="ota-form-group">
+              <label for="otaChangelogInput">Nội dung thay đổi (Changelog)</label>
+              <input id="otaChangelogInput" class="ota-input" type="text" placeholder="Cập nhật giao diện, sửa lỗi...">
+            </div>
+            <div class="ota-form-group">
+              <label for="otaFileInput">Gói phần mềm (.zip tạo bằng ota/pack_release.py)</label>
+              <input id="otaFileInput" class="ota-input" type="file" accept=".zip" required>
+            </div>
+            <button id="otaUploadBtn" type="submit" class="ota-btn ota-btn-primary">
+              Tải lên & Ký số Release
+            </button>
+            <div id="otaUploadMsg" class="ota-msg"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Danh sách gói Release -->
+      <div class="bento-card" style="margin-bottom:18px;">
+        <h3 style="margin-top:0; margin-bottom:12px;">Danh sách phiên bản (Releases)</h3>
+        <div class="table-container">
+          <table id="otaReleasesTable">
+            <thead>
+              <tr>
+                <th>Phiên bản</th>
+                <th>Kích thước</th>
+                <th>SHA-256</th>
+                <th>Changelog</th>
+                <th>Thời gian</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-muted);">Đang tải...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Lịch sử Update Jobs -->
+      <div class="bento-card">
+        <h3 style="margin-top:0; margin-bottom:12px;">Lịch sử cập nhật & Rollback</h3>
+        <div class="table-container">
+          <table id="otaJobsTable">
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Hành động</th>
+                <th>Phiên bản</th>
+                <th>Trạng thái</th>
+                <th>Tiến độ</th>
+                <th>Chi tiết</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-muted);">Đang tải...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/core/icons.js"></script>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/ota.js"></script>
+</body>
+</html>
